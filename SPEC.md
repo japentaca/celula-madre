@@ -21,8 +21,9 @@ Música aleatoria generada mediante algoritmos. El flujo de generación es linea
 
 ## Células y motivos
 - Se parte de una célula madre
-- Se eligen al azar entre **2 y 4** células/motivos derivados de la madre
+- Se generan variaciones derivadas de la madre: **al menos tantas como pistas** (mínimo 4)
 - Las variaciones pueden ser más complejas (invertir, rotar, seleccionar sub-secuencias, alterar alturas, velocidades, etc.)
+- Dos pistas nunca tocan el **mismo motivo simultáneamente** dentro de una sección
 
 ## Modificadores
 **Placeholder** — se definirá después.
@@ -62,8 +63,7 @@ Música aleatoria generada mediante algoritmos. El flujo de generación es linea
 4. MonoSynth — subtractivo, cálido, versátil
 5. DuoSynth — doble oscilador con chorus, rico
 6. PluckSynth — percusivo, acentos rítmicos
-7. MembraneSynth — bombo/tímpano, graves y ritmo
-8. SynthPair — dos osciladores en paralelo, ambiental
+7. SynthPair — dos osciladores en paralelo, ambiental
 
 Selección mediante selector de presets.
 

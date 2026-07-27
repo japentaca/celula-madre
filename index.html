@@ -36,18 +36,22 @@
         <option value="A-B-C-B-D-D-D-A">A-B-C-B-D-D-D-A</option>
         <option value="A-A-B-B">A-A-B-B</option>
         <option value="A-B-C-D">A-B-C-D</option>
+        <option value="A-B-A-C-A">A-B-A-C-A</option>
+        <option value="A-B-C-A-B">A-B-C-A-B</option>
+        <option value="A-A-B-B-C-C-A">A-A-B-B-C-C-A</option>
+        <option value="A-B-C-D-C-B-A">A-B-C-D-C-B-A</option>
       </select>
     </div>
     <div class="topbar-group">
       <label>Preset</label>
       <select id="select-preset">
+        <option value="random" selected>Aleatorio (por pista)</option>
         <option value="Synth">Synth</option>
         <option value="FMSynth">FMSynth</option>
         <option value="AMSynth">AMSynth</option>
         <option value="MonoSynth">MonoSynth</option>
         <option value="DuoSynth">DuoSynth</option>
         <option value="PluckSynth">PluckSynth</option>
-        <option value="MembraneSynth">MembraneSynth</option>
         <option value="SynthPair">SynthPair</option>
       </select>
     </div>
@@ -92,6 +96,7 @@
     <div id="grid-container">
       <canvas id="grid-canvas"></canvas>
     </div>
+    <aside id="track-panel"></aside>
   </main>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <script src="js/audio.js"></script>

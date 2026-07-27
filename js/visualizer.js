@@ -1,15 +1,29 @@
 const Visualizer = (() => {
   let canvas = null;
   let ctx = null;
-  let cellWidth = 12;
-  let cellHeight = 20;
-  let trackHeight = 40;
-  let headerWidth = 50;
+  let offscreen = null;
+  let offCtx = null;
+  let piece = null;
   let cursorStep = -1;
-  let highlightedCells = new Set();
-  let sectionMarkers = [];
-  let motherCellLength = 0;
-  const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+  let cellWidth = 12;
+  let trackHeight = 44;
+  const headerWidth = 50;
+  const topBar = 24;
+  const noteHeight = 6;
+
+  // Color por motivo: [0] célula madre, resto variaciones
+  const MOTIF_COLORS = [
+    [106, 99, 255],
+    [78, 205, 196],
+    [255, 159, 67],
+    [255, 107, 157],
+    [123, 237, 159],
+    [255, 214, 102],
+    [92, 200, 255],
+    [255, 99, 99],
+    [200, 150, 255]
+  ];
 
   function init(canvasId) {
     canvas = document.getElementById(canvasId);
@@ -17,126 +31,169 @@ const Visualizer = (() => {
     ctx = canvas.getContext('2d');
   }
 
-  function render(tracks, motherCellLengthArg, motifs, sectionOrder) {
-    motherCellLength = motherCellLengthArg || 16;
-    if (!canvas || !ctx) return;
+  function containerWidth() {
+    const container = document.getElementById('grid-container');
+    return container ? container.clientWidth : 800;
+  }
 
-    const numTracks = tracks.length;
-    const totalSteps = motherCellLength;
-    const width = headerWidth + totalSteps * cellWidth;
-    const height = numTracks * trackHeight + 24;
+  // Ajusta el ancho de celda para que la pieza llene la ventana;
+  // si la pieza es muy larga, ancho mínimo y scroll horizontal
+  function computeCellWidth(totalSteps) {
+    const avail = containerWidth() - headerWidth;
+    const fit = Math.floor(avail / totalSteps);
+    return Math.max(3, Math.min(20, fit));
+  }
+
+  function midiRange(grid) {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const row of grid) {
+      for (const cell of row) {
+        if (!cell) continue;
+        if (cell.midi < min) min = cell.midi;
+        if (cell.midi > max) max = cell.midi;
+      }
+    }
+    if (min === Infinity) { min = 60; max = 72; }
+    if (min === max) max = min + 1;
+    return { min, max };
+  }
+
+  function renderPiece(p) {
+    piece = p;
+    cursorStep = -1;
+    if (!canvas || !ctx || !piece) return;
+
+    cellWidth = computeCellWidth(piece.totalSteps);
+    const width = Math.max(containerWidth(), headerWidth + piece.totalSteps * cellWidth);
+    const height = topBar + piece.numTracks * trackHeight;
 
     canvas.width = width;
     canvas.height = height;
     canvas.style.width = width + 'px';
     canvas.style.height = height + 'px';
 
-    ctx.fillStyle = '#0a0a14';
-    ctx.fillRect(0, 0, width, height);
+    offscreen = document.createElement('canvas');
+    offscreen.width = width;
+    offscreen.height = height;
+    offCtx = offscreen.getContext('2d');
 
-    if (sectionMarkers.length > 0) {
-      ctx.fillStyle = 'rgba(108, 99, 255, 0.08)';
-      for (const marker of sectionMarkers) {
-        const sx = headerWidth + marker.start * cellWidth;
-        const sw = marker.length * cellWidth;
-        ctx.fillRect(sx, 24, sw, numTracks * trackHeight);
-      }
-      ctx.fillStyle = 'rgba(108, 99, 255, 0.5)';
-      ctx.font = '9px monospace';
-      ctx.textAlign = 'center';
-      for (const marker of sectionMarkers) {
-        const sx = headerWidth + marker.start * cellWidth;
-        const sw = marker.length * cellWidth;
-        ctx.fillText(marker.label, sx + sw / 2, 18);
-      }
-    }
-
-    for (let t = 0; t < numTracks; t++) {
-      const y = 24 + t * trackHeight;
-      ctx.fillStyle = t % 2 === 0 ? '#0d0d1a' : '#0a0a14';
-      ctx.fillRect(headerWidth, y, totalSteps * cellWidth, trackHeight);
-
-      ctx.strokeStyle = '#1a1a2e';
-      ctx.lineWidth = 0.5;
-      ctx.strokeRect(headerWidth, y, totalSteps * cellWidth, trackHeight);
-
-      for (let s = 0; s < totalSteps; s++) {
-        const x = headerWidth + s * cellWidth;
-        ctx.strokeStyle = '#1a1a2e';
-        ctx.lineWidth = 0.5;
-        ctx.strokeRect(x, y, cellWidth, trackHeight);
-
-        const track = tracks[t];
-        if (track && track.motifIndex !== null && track.motifIndex < motifs.length) {
-          const motif = motifs[track.motifIndex];
-          if (motif && s < motif.length && motif[s].note) {
-            const semitone = motif[s].pitch;
-            const octave = Math.floor(semitone / 12);
-            const noteInOctave = semitone % 12;
-            const noteName = NOTE_NAMES[noteInOctave] + octave;
-            const brightness = motif[s].velocity || 0.5;
-            const r = Math.floor(106 * brightness);
-            const g = Math.floor(99 * brightness);
-            const b = Math.floor(255 * brightness);
-            ctx.fillStyle = `rgb(${r},${g},${b})`;
-            ctx.fillRect(x + 1, y + 2, cellWidth - 2, trackHeight - 4);
-
-            if (brightness > 0.7) {
-              ctx.fillStyle = '#fff';
-              ctx.font = '8px monospace';
-              ctx.fillText(noteName, x + 1, y + trackHeight / 2 + 3);
-            }
-          }
-        }
-      }
-
-      ctx.fillStyle = '#6c63ff';
-      ctx.font = '9px monospace';
-      ctx.textAlign = 'right';
-      ctx.fillText(`T${t + 1}`, headerWidth - 4, y + trackHeight / 2 + 3);
-    }
-
-    ctx.strokeStyle = '#6c63ff';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(headerWidth, 24, totalSteps * cellWidth, numTracks * trackHeight);
-
-    drawCursor();
+    drawPiece(offCtx, width, height);
+    blit();
   }
 
-  function drawCursor() {
-    if (!ctx || cursorStep < 0) return;
-    const x = headerWidth + cursorStep * cellWidth;
-    ctx.fillStyle = 'rgba(255, 80, 80, 0.3)';
-    ctx.fillRect(x, 24, cellWidth, canvas.height - 24);
-    ctx.fillStyle = '#ff3333';
-    ctx.fillRect(x, 24, 2, canvas.height - 24);
+  function drawPiece(g, width, height) {
+    g.fillStyle = '#0a0a14';
+    g.fillRect(0, 0, width, height);
+
+    const range = midiRange(piece.grid);
+
+    // Fondo y etiqueta de cada sección
+    piece.sections.forEach((section, i) => {
+      const sx = headerWidth + section.startStep * cellWidth;
+      const sw = section.lengthSteps * cellWidth;
+      g.fillStyle = i % 2 === 0 ? 'rgba(108, 99, 255, 0.10)' : 'rgba(108, 99, 255, 0.04)';
+      g.fillRect(sx, topBar, sw, piece.numTracks * trackHeight);
+
+      g.fillStyle = section.recap ? 'rgba(255, 170, 80, 0.9)' : 'rgba(108, 99, 255, 0.7)';
+      g.font = '10px monospace';
+      g.textAlign = 'center';
+      const label = section.label
+        + (section.totalRepeats > 1 ? ' x' + section.totalRepeats : '')
+        + (section.recap ? ' (R)' : '');
+      g.fillText(label, sx + sw / 2, 16);
+
+      g.strokeStyle = 'rgba(108, 99, 255, 0.35)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(sx + 0.5, topBar);
+      g.lineTo(sx + 0.5, height);
+      g.stroke();
+    });
+
+    for (let t = 0; t < piece.numTracks; t++) {
+      const y = topBar + t * trackHeight;
+
+      g.strokeStyle = '#1a1a2e';
+      g.lineWidth = 0.5;
+      g.strokeRect(headerWidth, y, piece.totalSteps * cellWidth, trackHeight);
+
+      const row = piece.grid[t];
+      for (let s = 0; s < piece.totalSteps; s++) {
+        const cell = row[s];
+        if (!cell) continue;
+        const x = headerWidth + s * cellWidth;
+        const norm = (cell.midi - range.min) / (range.max - range.min);
+        const ny = y + (trackHeight - noteHeight - 2) * (1 - norm) + 1;
+        const brightness = 0.4 + 0.6 * cell.velocity;
+        const color = MOTIF_COLORS[(cell.motifIndex || 0) % MOTIF_COLORS.length];
+        const r = Math.floor(color[0] * brightness);
+        const gg = Math.floor(color[1] * brightness);
+        const b = Math.floor(color[2] * brightness);
+        g.fillStyle = `rgb(${r},${gg},${b})`;
+        const noteWidth = Math.max((cell.durationSteps || 1) * cellWidth - 1, 2);
+        g.fillRect(x, ny, noteWidth, noteHeight);
+      }
+
+      g.fillStyle = '#6c63ff';
+      g.font = '10px monospace';
+      g.textAlign = 'right';
+      g.fillText('T' + (t + 1), headerWidth - 6, y + trackHeight / 2 + 3);
+    }
+
+    // Límite izquierdo de cada bloque dentro de su pista
+    if (piece.blockMarkers) {
+      g.lineWidth = 1;
+      for (const block of piece.blockMarkers) {
+        const bx = headerWidth + block.startStep * cellWidth;
+        const by = topBar + block.trackIndex * trackHeight;
+        const color = MOTIF_COLORS[block.motifIndex % MOTIF_COLORS.length];
+        g.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},0.45)`;
+        g.beginPath();
+        g.moveTo(bx + 0.5, by);
+        g.lineTo(bx + 0.5, by + trackHeight);
+        g.stroke();
+      }
+    }
+
+    g.strokeStyle = '#6c63ff';
+    g.lineWidth = 1.5;
+    g.strokeRect(headerWidth, topBar, piece.totalSteps * cellWidth, piece.numTracks * trackHeight);
+  }
+
+  function blit() {
+    if (!ctx || !offscreen) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(offscreen, 0, 0);
+    if (cursorStep >= 0) {
+      const x = headerWidth + cursorStep * cellWidth;
+      ctx.fillStyle = 'rgba(255, 80, 80, 0.25)';
+      ctx.fillRect(x, topBar, cellWidth, canvas.height - topBar);
+      ctx.fillStyle = '#ff3333';
+      ctx.fillRect(x, topBar, 2, canvas.height - topBar);
+    }
   }
 
   function setCursor(step) {
     cursorStep = step;
+    blit();
+    scrollToCursor();
   }
 
   function clearCursor() {
     cursorStep = -1;
-    if (ctx && canvas) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-  }
-
-  function setSectionMarkers(markers) {
-    sectionMarkers = markers;
+    blit();
   }
 
   function scrollToCursor() {
-    if (!canvas) return;
     const container = document.getElementById('grid-container');
-    if (!container) return;
+    if (!container || cursorStep < 0) return;
     const cursorX = headerWidth + cursorStep * cellWidth;
-    const containerWidth = container.clientWidth;
-    if (cursorX > container.scrollLeft + containerWidth - 100) {
-      container.scrollLeft = cursorX - containerWidth + 150;
+    const viewWidth = container.clientWidth;
+    if (cursorX > container.scrollLeft + viewWidth - 100 || cursorX < container.scrollLeft) {
+      container.scrollLeft = Math.max(0, cursorX - 150);
     }
   }
 
-  return { init, render, setCursor, clearCursor, setSectionMarkers, scrollToCursor };
+  return { init, renderPiece, setCursor, clearCursor };
 })();
