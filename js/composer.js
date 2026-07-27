@@ -5,13 +5,13 @@ const Composer = (() => {
   let currentStepIndex = 0;
   let onStepCallback = null;
   let onCompleteCallback = null;
+  let lastAbsoluteStart = 0;
 
   function compose(tracks, motifs, formStr, cellLength) {
     composedSequence = [];
     const formParts = formStr.split('-');
     const sectionCount = formParts.length;
     let timeOffset = 0;
-
     for (let sec = 0; sec < sectionCount; sec++) {
       for (let step = 0; step < cellLength; step++) {
         for (let t = 0; t < tracks.length; t++) {
@@ -34,7 +34,6 @@ const Composer = (() => {
       }
       timeOffset += cellLength;
     }
-
     return composedSequence;
   }
 
@@ -43,7 +42,7 @@ const Composer = (() => {
   }
 
   function play(onStep, onComplete) {
-    if (isPlaying) stop();
+    if (isPlaying) return;
     onStepCallback = onStep;
     onCompleteCallback = onComplete;
     if (composedSequence.length === 0) return;
@@ -51,11 +50,14 @@ const Composer = (() => {
     isPlaying = true;
     currentStepIndex = 0;
 
-    const startTime = Tone.now() + 0.01;
+    const now = Tone.now();
+    const startOffset = Math.max(0.05, lastAbsoluteStart - now + 0.01);
+    const absoluteStart = now + startOffset;
+    lastAbsoluteStart = absoluteStart;
 
     for (let i = 0; i < composedSequence.length; i++) {
       const event = composedSequence[i];
-      const eventTime = startTime + event.time;
+      const eventTime = absoluteStart + event.time;
       Tone.Transport.schedule((time) => {
         if (onStepCallback) onStepCallback(currentStepIndex);
         currentStepIndex++;
@@ -69,18 +71,19 @@ const Composer = (() => {
       }, eventTime);
     }
 
-    Tone.Transport.start('+0.01');
+    Tone.Transport.start('+' + startOffset);
 
-    const totalDuration = composedSequence[composedSequence.length - 1].time + startTime + 2;
+    const totalDuration = composedSequence[composedSequence.length - 1].time + absoluteStart + 2;
     playbackTimeout = setTimeout(() => {
       if (isPlaying) {
-        stop();
+        doStop();
         if (onCompleteCallback) onCompleteCallback();
       }
     }, totalDuration * 1000);
   }
 
-  function stop() {
+  function doStop() {
+    if (!isPlaying) return;
     isPlaying = false;
     Tone.Transport.stop();
     Tone.Transport.cancel();
@@ -89,6 +92,10 @@ const Composer = (() => {
       playbackTimeout = null;
     }
     currentStepIndex = 0;
+  }
+
+  function stop() {
+    doStop();
   }
 
   function getIsPlaying() {
