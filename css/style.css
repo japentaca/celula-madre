@@ -1,0 +1,100 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: monospace;
+  background: #0d0d0d;
+  color: #e0e0e0;
+  overflow: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #1a1a2e;
+  border-bottom: 1px solid #2a2a4e;
+  flex-wrap: wrap;
+  min-height: 48px;
+}
+
+.topbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.topbar-group label {
+  font-size: 11px;
+  color: #8888aa;
+  white-space: nowrap;
+}
+
+.topbar-group input[type="range"] {
+  width: 80px;
+  accent-color: #6c63ff;
+}
+
+.topbar-group select {
+  background: #16213e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4e;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+.topbar-group input[type="checkbox"] {
+  accent-color: #6c63ff;
+}
+
+.topbar-group span {
+  font-size: 11px;
+  min-width: 24px;
+  text-align: center;
+}
+
+#topbar button {
+  background: #16213e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4e;
+  border-radius: 3px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: monospace;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#topbar button:hover {
+  background: #2a2a4e;
+}
+
+#topbar button:active {
+  background: #6c63ff;
+}
+
+#workspace {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+#grid-container {
+  padding: 16px;
+}
+
+#grid-canvas {
+  display: block;
+  background: #0a0a14;
+  border: 1px solid #1a1a2e;
+  cursor: default;
+}
