@@ -50,25 +50,28 @@ const Composer = (() => {
 
     isPlaying = true;
     currentStepIndex = 0;
-    Tone.Transport.start();
 
-    const startTime = Tone.now();
-    for (const event of composedSequence) {
+    const startTime = Tone.now() + 0.01;
+
+    for (let i = 0; i < composedSequence.length; i++) {
+      const event = composedSequence[i];
       const eventTime = startTime + event.time;
-      Tone.Transport.schedule(() => {
+      Tone.Transport.schedule((time) => {
         if (onStepCallback) onStepCallback(currentStepIndex);
         currentStepIndex++;
         AudioEngine.playNote(
           event.preset,
           event.note,
-          Tone.now(),
+          time,
           event.duration,
           event.velocity
         );
       }, eventTime);
     }
 
-    const totalDuration = composedSequence[composedSequence.length - 1].time + 2;
+    Tone.Transport.start('+0.01');
+
+    const totalDuration = composedSequence[composedSequence.length - 1].time + startTime + 2;
     playbackTimeout = setTimeout(() => {
       if (isPlaying) {
         stop();

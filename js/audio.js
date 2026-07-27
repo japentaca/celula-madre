@@ -16,7 +16,12 @@ const AudioEngine = (() => {
 
   async function init() {
     if (isInitialized) return;
-    await Tone.start();
+    try {
+      await Tone.start();
+    } catch (e) {
+      console.error('Tone.js no puede inicializarse. Abre el archivo desde un servidor HTTP (localhost) o HTTPS, no desde file://', e);
+      return;
+    }
     masterGain = new Tone.Gain(0.5).toDestination();
     synthMap = {};
     for (const name of Object.keys(PRESETS)) {
