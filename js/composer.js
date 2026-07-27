@@ -5,7 +5,7 @@ const Composer = (() => {
   let currentStepIndex = 0;
   let onStepCallback = null;
   let onCompleteCallback = null;
-  let lastAbsoluteStart = 0;
+  let nextStartTime = 1;
 
   function compose(tracks, motifs, formStr, cellLength) {
     composedSequence = [];
@@ -50,13 +50,14 @@ const Composer = (() => {
     isPlaying = true;
     currentStepIndex = 0;
 
-    const now = Tone.now();
-    const absStart = Math.max(now + 0.1, lastAbsoluteStart + 0.001);
-    lastAbsoluteStart = absStart;
+    const offset = nextStartTime;
+    nextStartTime = offset + 1;
+
+    const startTime = Tone.now() + 0.1;
 
     for (let i = 0; i < composedSequence.length; i++) {
       const event = composedSequence[i];
-      const eventTime = absStart + event.time;
+      const eventTime = startTime + event.time;
       Tone.Transport.schedule((time) => {
         if (onStepCallback) onStepCallback(currentStepIndex);
         currentStepIndex++;
@@ -70,9 +71,9 @@ const Composer = (() => {
       }, eventTime);
     }
 
-    Tone.Transport.start(absStart.toString());
+    Tone.Transport.start('+' + 0.1);
 
-    const totalDuration = composedSequence[composedSequence.length - 1].time + absStart + 2;
+    const totalDuration = composedSequence[composedSequence.length - 1].time + startTime + 2;
     playbackTimeout = setTimeout(() => {
       if (isPlaying) {
         doStop();
