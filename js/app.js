@@ -123,15 +123,8 @@ const App = (() => {
   function buildSectionMarkers(formParts, cellLength) {
     const markers = [];
     let pos = 0;
-    let sectionIndex = 0;
     for (const part of formParts) {
-      let label = part;
-      const existing = markers.find(m => m.label === label);
-      if (!existing) {
-        sectionIndex++;
-        label = part;
-      }
-      markers.push({ start: pos, length: cellLength, label });
+      markers.push({ start: pos, length: cellLength, label: part });
       pos += cellLength;
     }
     return markers;
@@ -159,8 +152,11 @@ const App = (() => {
       () => {
         Visualizer.clearCursor();
         renderGrid();
-        if (getUIState().autorestart) {
-          setTimeout(() => play(), 500);
+        if (getUIState().autorestart || getUIState().autogen) {
+          setTimeout(() => {
+            if (getUIState().autogen) generate();
+            play();
+          }, 500);
         }
       }
     );
