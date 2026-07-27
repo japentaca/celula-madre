@@ -51,13 +51,12 @@ const Composer = (() => {
     currentStepIndex = 0;
 
     const now = Tone.now();
-    const startOffset = Math.max(0.05, lastAbsoluteStart - now + 0.01);
-    const absoluteStart = now + startOffset;
-    lastAbsoluteStart = absoluteStart;
+    const absStart = Math.max(now + 0.1, lastAbsoluteStart + 0.001);
+    lastAbsoluteStart = absStart;
 
     for (let i = 0; i < composedSequence.length; i++) {
       const event = composedSequence[i];
-      const eventTime = absoluteStart + event.time;
+      const eventTime = absStart + event.time;
       Tone.Transport.schedule((time) => {
         if (onStepCallback) onStepCallback(currentStepIndex);
         currentStepIndex++;
@@ -71,9 +70,9 @@ const Composer = (() => {
       }, eventTime);
     }
 
-    Tone.Transport.start('+' + startOffset);
+    Tone.Transport.start(absStart.toString());
 
-    const totalDuration = composedSequence[composedSequence.length - 1].time + absoluteStart + 2;
+    const totalDuration = composedSequence[composedSequence.length - 1].time + absStart + 2;
     playbackTimeout = setTimeout(() => {
       if (isPlaying) {
         doStop();
