@@ -53,7 +53,7 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
   `degree` es un **grado de escala** (no semitonos) en [-7, 7]; la octava sale de
   dividir por el largo de la escala. Solo se convierte a MIDI en
   `Generator.degreeToMidi`.
-- **Célula**: array de pasos; largo siempre potencia de 2 (16/32/64/128/256).
+- **Célula**: array de pasos; largo siempre potencia de 2 (16/32/64).
   Toda célula (madre y variaciones) lleva `cell.contour` con el nombre del
   algoritmo de contorno de sus alturas.
 - **Motivos**: `motifs[0]` es siempre la célula madre; siguen 2+ variaciones.

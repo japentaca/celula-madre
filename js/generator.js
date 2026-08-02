@@ -8,7 +8,7 @@ const Generator = (() => {
     chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
   };
 
-  const CELL_LENGTHS = [16, 32, 64, 128, 256];
+  const CELL_LENGTHS = [16, 32, 64];
 
   // Cada N unidades de tiempo (semicorcheas = pasos del grid) la pieza da un
   // paso en el ciclo de quintas; potencias de 2: valores bajos modulan a
