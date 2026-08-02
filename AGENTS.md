@@ -68,8 +68,12 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
   blockMarkers, numTracks, cellLength, scale, key, fifthSteps, contour }`.
   `grid[pista][paso]` para el visualizador; `stepEvents[paso]` para el transporte.
 - **Modulación por quintas**: cada `fifthSteps` (4/8/16) repeticiones de célula
-  acumuladas, la tonalidad avanza una quinta (+7 semitonos, mod 12). Cada sección
-  guarda su `keyOffset`, constante dentro de ella; cada nota de `grid` y
+  acumuladas (siempre una frontera de sección) el viaje por el ciclo de quintas
+  da un paso aleatorio de ±1 quinta (+7/−7 semitonos), hacia adelante o hacia
+  atrás, rebotando en el borde. El viaje está **acotado a ±4 pasos** desde la
+  tonalidad base (`MAX_FIFTH_STEPS` en `composer.js`); los `keyOffset` posibles
+  son {0, 2, 3, 4, 5, 7, 8, 9, 10} (mod 12). Cada sección guarda su `keyOffset`,
+  constante dentro de ella; cada nota de `grid` y
   `stepEvents` lo copia para que `retune` pueda re-mapear sin perderlo. La
   modulación es **suave** (`Generator.degreeToMidiInKey`): la nota se calcula en
   la tonalidad base y solo se altera ±1 semitono si no pertenece a la escala

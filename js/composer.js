@@ -7,6 +7,9 @@ const Composer = (() => {
   const STEP = '16n';
   // Repeticiones totales de célula por sección (potencias de 2)
   const SECTION_REPEAT_CHOICES = [2, 4];
+  // Límite del viaje por el ciclo de quintas: la tonalidad no se aleja más de
+  // este número de quintas (en cualquiera de los dos sentidos) desde la base
+  const MAX_FIFTH_STEPS = 4;
 
   // Compresión de dinámica al tocar (no altera la partitura): el rango audible
   // se estrecha hacia DYN_CENTER con razón DYN_RATIO (0.5 ≈ compresor 2:1)
@@ -134,15 +137,25 @@ const Composer = (() => {
     const stepEvents = Array.from({ length: totalSteps }, () => []);
     const blockMarkers = [];
 
-    // Modulación: cada fifthSteps repeticiones de célula acumuladas la tonalidad
-    // avanza una quinta (+7 semitonos, mod 12); constante dentro de cada sección,
-    // así que el cambio siempre cae en una frontera de sección. Es una modulación
-    // suave: las alturas se conservan y solo se alteran las notas ajenas a la
-    // tonalidad nueva (ver degreeToMidiInKey)
+    // Modulación: cada fifthSteps repeticiones de célula acumuladas (siempre una
+    // frontera de sección) el viaje por el ciclo de quintas da un paso aleatorio
+    // de ±1 quinta (+7/-7 semitonos), hacia adelante o hacia atrás. El viaje se
+    // limita a ±MAX_FIFTH_STEPS pasos desde la tonalidad base (ni se aleja
+    // demasiado hacia las sostenidas ni hacia las bemoles), rebotando en el
+    // borde. Es una modulación suave: las alturas se conservan y solo se alteran
+    // las notas ajenas a la tonalidad nueva (ver degreeToMidiInKey)
     let pos = 0;
     let cumRepeats = 0;
+    let fifthStep = 0;
+    let prevCadence = 0;
     for (const section of sections) {
-      section.keyOffset = fifthSteps ? (Math.floor(cumRepeats / fifthSteps) * 7) % 12 : 0;
+      const cadence = fifthSteps ? Math.floor(cumRepeats / fifthSteps) : 0;
+      if (cadence > prevCadence) {
+        fifthStep += Generator.pickRandom([-1, 1]);
+        fifthStep = Math.max(-MAX_FIFTH_STEPS, Math.min(MAX_FIFTH_STEPS, fifthStep));
+        prevCadence = cadence;
+      }
+      section.keyOffset = ((fifthStep * 7) % 12 + 12) % 12;
       const sectionSteps = cellLength * section.totalRepeats;
       for (let t = 0; t < numTracks; t++) {
         const blocks = section.trackBlocks[t];

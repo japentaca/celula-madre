@@ -54,8 +54,11 @@ tiene distinto al de la madre.
 - `durationSteps >= 1` en toda nota y ninguna nota pisa la siguiente de su pista.
 - Letras de forma repetidas comparten spec (mismo `trackBlocks` por letra, salvo
   la sección de recapitulación).
-- Modulación por quintas: cada sección lleva `keyOffset === (floor(repeticiones
-  acumuladas / fifthSteps) * 7) % 12`, con `fifthSteps` ∈ {4, 8, 16}; toda nota
+- Modulación por quintas: cada `fifthSteps` ∈ {4, 8, 16} repeticiones de célula
+  acumuladas (frontera de sección) el viaje da un paso aleatorio de ±1 quinta;
+  la primera sección está en la tonalidad base y toda sección lleva un
+  `keyOffset` ∈ {0, 2, 3, 4, 5, 7, 8, 9, 10} (mod 12, a lo sumo ±4 quintas desde
+  la base, con cambios de ±7 semitonos entre secciones). Toda nota
   de `grid`/`stepEvents` copia el `keyOffset` de su sección y su `midi` equivale
   a `degreeToMidiInKey(degree, scale, key, keyOffset)`. `retune` debe conservar
   esa equivalencia con la nueva escala/tonalidad.
