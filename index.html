@@ -23,6 +23,16 @@
       <button popovertarget="dlg-effects" class="dialog-btn">Efectos ▾</button>
       <button popovertarget="dlg-output" class="dialog-btn">Salida ▾</button>
     </div>
+    <div class="topbar-group">
+      <label>Vista</label>
+      <select id="select-view" title="Visualización de la grilla: piano roll 2D, ciudad de notas, túnel helicoidal (una vuelta = una célula), terreno orgánico o constelación de partículas">
+        <option value="2d">2D</option>
+        <option value="city">3D Ciudad</option>
+        <option value="tunnel">3D Túnel</option>
+        <option value="terrain">3D Terreno</option>
+        <option value="stars">3D Constelación</option>
+      </select>
+    </div>
   </header>
 
   <div id="dlg-generation" class="dialog" popover>
@@ -172,14 +182,27 @@
     <div id="grid-container">
       <canvas id="grid-canvas"></canvas>
     </div>
+    <div id="viz3d-container" class="hidden"></div>
     <aside id="track-panel"></aside>
   </main>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/midi.js"></script>
   <script src="js/visualizer.js"></script>
+  <!-- Módulo ESM: se ejecuta tras los scripts clásicos pero antes de
+       DOMContentLoaded; si el CDN falla, App deshabilita el botón Vista 3D -->
+  <script type="module" src="js/visualizer3d.js"></script>
   <script src="js/generator.js"></script>
   <script src="js/humanizer.js"></script>
+  <script src="js/energy.js"></script>
   <script src="js/counterpoint.js"></script>
   <script src="js/composer.js"></script>
   <script src="js/syntheditor.js"></script>

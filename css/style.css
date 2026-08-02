@@ -246,6 +246,53 @@ body {
   cursor: default;
 }
 
+/* Vista 3D: ocupa el hueco del piano roll; solo uno de los dos es visible */
+#grid-container.hidden,
+#viz3d-container.hidden {
+  display: none;
+}
+
+#viz3d-container {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  background: #0a0a14;
+}
+
+#viz3d-container canvas {
+  display: block;
+}
+
+.viz3d-overlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 6px;
+  z-index: 5;
+}
+
+.viz3d-overlay button {
+  background: rgba(22, 33, 62, 0.75);
+  color: #e0e0e0;
+  border: 1px solid #2a2a4e;
+  border-radius: 3px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-family: monospace;
+  cursor: pointer;
+}
+
+.viz3d-overlay button:hover {
+  background: #2a2a4e;
+}
+
+.viz3d-overlay button.active {
+  background: #6c63ff;
+  border-color: #6c63ff;
+}
+
 #track-panel {
   width: 250px;
   flex-shrink: 0;

@@ -14,6 +14,8 @@ Todo se **pre-computa antes de reproducir**; no hay generación en tiempo real.
 
 - JavaScript vanilla (ES6, sin build, sin npm, sin frameworks).
 - Tone.js 14.8.49 por CDN (`index.html`).
+- THREE.js 0.170 por CDN con importmap, solo para la vista 3D
+  (`js/visualizer3d.js`, único módulo ESM; si el CDN falla la app sigue en 2D).
 - **No funciona desde `file://`**: Tone.js necesita contexto seguro. Servir por
   HTTP local, p. ej. `python -m http.server 8000` en la raíz y abrir
   `http://localhost:8000`. Ver skill `run-app`.
@@ -30,7 +32,8 @@ Ocho módulos IIFE que exponen un objeto global cada uno. El orden de carga en
 | `js/audio.js` | `AudioEngine` | Grafo de audio Tone.js: presets de sintes (nombre de fábrica o definición `{ base, params, chain }`), una instancia por pista, cadena de efectos de inserción por pista (sinte→fx→panner), envíos a reverb/delay, paneo, master. Se puede deshabilitar desde el topbar (checkbox Audio) sin parar el Transport. |
 | `js/syntheditor.js` | `SynthEditor` | Editor modal por pista: esquemas declarativos de parámetros por tipo de sinte, cadena de efectos (catálogo curado, reordenable), edición en vivo vía `AudioEngine`, presets de usuario en localStorage (`binario.userPresets`, id `user:Nombre`) con export/import JSON. Comunica cambios a `App` por callbacks (`trackSettings.edited`). |
 | `js/midi.js` | `MidiEngine` | Salida Web MIDI hacia VSTs/hardware: puerto global (topbar), canal 1-16 por pista (strip), note-on/off con timestamps en dominio `performance.now()`, y al parar `clear()` + note-off explícito por nota activa + CC 123/120 (muchos VSTs ignoran los CCs de modo). Sin puerto seleccionado no hace nada. |
-| `js/visualizer.js` | `Visualizer` | Piano roll en canvas (offscreen + blit), cursor con autoscroll, colores por motivo. |
+| `js/visualizer.js` | `Visualizer` | Piano roll en canvas (offscreen + blit), cursor con autoscroll, colores por motivo (`MOTIF_COLORS`, compartidos con la vista 3D). |
+| `js/visualizer3d.js` | `Visualizer3D` | Vistas 3D con THREE.js, cuatro modos que comparten renderer, bloom, cursor y seguimiento de cámara: «city» (ciudad de notas: bloques instanciados, tiempo en X, pistas en Z, altura en Y), «tunnel» (túnel helicoidal: una vuelta = una célula, cada pista un anillo concéntrico, cámara interior; «Encuadrar» alterna interior/exterior), «terrain» (heightfield continuo con crestas por pista, biomas por motivo y frente de onda luminoso en el shader) y «stars» (cada nota una estrella con flare y onda expansiva al sonar, bloques enlazados como constelaciones, secciones como nebulosas). Misma interfaz que `Visualizer` más `setMode`; `App` conmuta con el selector «Vista» del topbar (persistido) y despacha a la vista activa (`viz()`/`vizRender`). Módulo ESM (los addons de THREE no existen como script clásico): se carga con `<script type="module">` y publica `window.Visualizer3D`. |
 | `js/generator.js` | `Generator` | Material musical: célula madre con contorno orgánico, variaciones (invertir, rotar, retrogradar…), formas, escalas, grados→MIDI. |
 | `js/humanizer.js` | `Humanizer` | Pase de humanización sobre el `grid` compuesto: mutación de repeticiones, notas de paso, articulación contextual, arcos de dinámica y respiraciones. Sin efecto sobre el tempo. |
 | `js/counterpoint.js` | `Counterpoint` | Pase determinista de consonancia vertical entre pistas: resuelve disonancias duras (segundas, séptimas, tritono) moviendo ±1 grado, apagando o acortando notas; abre unísonos a la octava. Tolera notas de paso en tiempo débil. |

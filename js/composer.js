@@ -8,6 +8,20 @@ const Composer = (() => {
   // Repeticiones totales de célula por sección (potencias de 2)
   const SECTION_REPEAT_CHOICES = [2, 4];
 
+  // Compresión de dinámica al tocar (no altera la partitura): el rango audible
+  // se estrecha hacia DYN_CENTER con razón DYN_RATIO (0.5 ≈ compresor 2:1)
+  // para que las notas suaves no desaparezcan ni las fuertes golpeen. Las
+  // notas fantasma (velocity <= 0.18: disonancias apagadas por el contrapunto,
+  // ecos del humanizador) se dejan tal cual — su papel es ser casi inaudibles
+  const DYN_CENTER = 0.65;
+  const DYN_RATIO = 0.5;
+  const GHOST_VELOCITY = 0.18;
+
+  function shapeVelocity(v) {
+    if (v <= GHOST_VELOCITY) return v;
+    return Math.min(1, DYN_CENTER + (v - DYN_CENTER) * DYN_RATIO);
+  }
+
   // Divide N repeticiones en bloques de tamaño potencia de 2 (p.ej. 4 -> [2,1,1] o [4])
   function partitionRepeats(n) {
     if (n === 1 || Math.random() < 0.4) return [n];
@@ -110,7 +124,8 @@ const Composer = (() => {
           if (blocks === null) return null;
           return blocks.map(b => (b.motifIndex === recapMotif ? { ...b, motifIndex: null } : b));
         }),
-        recap: true
+        recap: true,
+        recapTrack
       };
     }
 
@@ -170,6 +185,11 @@ const Composer = (() => {
     // debe ir antes de las duraciones porque añade/quita notas y cambia huecos
     Humanizer.humanize({ grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key });
 
+    // Energía: si demasiadas pistas atacan a la vez, las menos salientes ceden
+    // notas (menos y más largas). Va tras humanizar, para medir la textura
+    // real, y antes del contrapunto, que así vigila la textura ya aclarada
+    Energy.balance({ grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key });
+
     // Contrapunto: consonancia vertical entre pistas (mueve grados ±1, apaga o
     // acorta notas). Va tras humanizar, para vigilar también las notas que la
     // humanización añade, y antes de las duraciones, porque ajusta sustains
@@ -202,6 +222,8 @@ const Composer = (() => {
     }
 
     piece = { sections, totalSteps, grid, stepEvents, blockMarkers, numTracks, cellLength, scale, key, fifthSteps };
+    // Una pieza nueva invalida cualquier pausa pendiente de la anterior
+    currentStep = 0;
     return piece;
   }
 
@@ -231,7 +253,8 @@ const Composer = (() => {
   function play(onStep, onComplete) {
     if (isPlaying || !piece || piece.totalSteps === 0) return;
     isPlaying = true;
-    currentStep = 0;
+    // Reanuda desde donde se pausó; tras el final (o tras rebobinar) parte de 0
+    if (currentStep >= piece.totalSteps) currentStep = 0;
 
     Tone.Transport.cancel();
     repeatEventId = Tone.Transport.scheduleRepeat(time => {
@@ -250,8 +273,9 @@ const Composer = (() => {
       const stepSeconds = Tone.Time(STEP).toSeconds();
       for (const ev of piece.stepEvents[step]) {
         const duration = ev.durationSteps * stepSeconds * 0.95;
-        AudioEngine.playNote(ev.trackIndex, ev.midi, time, duration, ev.velocity);
-        MidiEngine.playNote(ev.trackIndex, ev.midi, time, duration, ev.velocity);
+        const velocity = shapeVelocity(ev.velocity);
+        AudioEngine.playNote(ev.trackIndex, ev.midi, time, duration, velocity);
+        MidiEngine.playNote(ev.trackIndex, ev.midi, time, duration, velocity);
       }
       Tone.Draw.schedule(() => {
         if (isPlaying && onStep) onStep(step);
@@ -261,8 +285,13 @@ const Composer = (() => {
     Tone.Transport.start();
   }
 
+  // Parada con memoria: en marcha pausa (conserva currentStep para que play
+  // reanude ahí); estando ya parado rebobina el transporte a 0
   function stop() {
-    if (!isPlaying) return;
+    if (!isPlaying) {
+      currentStep = 0;
+      return;
+    }
     isPlaying = false;
     Tone.Transport.stop();
     if (repeatEventId !== null) {
@@ -271,13 +300,16 @@ const Composer = (() => {
     }
     Tone.Transport.cancel();
     Tone.Transport.position = 0;
-    currentStep = 0;
     MidiEngine.allNotesOff();
+  }
+
+  function getCurrentStep() {
+    return currentStep;
   }
 
   function getIsPlaying() {
     return isPlaying;
   }
 
-  return { compose, retune, play, stop, getPiece, getIsPlaying };
+  return { compose, retune, play, stop, getPiece, getIsPlaying, getCurrentStep, shapeVelocity };
 })();

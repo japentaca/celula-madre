@@ -211,5 +211,6 @@ const Visualizer = (() => {
     }
   }
 
-  return { init, renderPiece, setCursor, clearCursor };
+  // MOTIF_COLORS se comparte con la vista 3D para que ambas pinten igual
+  return { init, renderPiece, setCursor, clearCursor, MOTIF_COLORS };
 })();

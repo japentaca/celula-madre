@@ -4,18 +4,165 @@ const App = (() => {
     // Ajustes por pista (persisten entre generaciones): preset elegido, volumen y envíos
     trackSettings: [],
     // Preset efectivo de cada pista en la pieza actual (resuelto cuando la elección es aleatoria)
-    resolvedPresets: []
+    resolvedPresets: [],
+    // Vista activa de la grilla ('2d' | 'city' | 'tunnel') y último paso del
+    // cursor, para reponerlo al conmutar de vista en plena reproducción
+    view: '2d',
+    cursorStep: -1
   };
+
+  // ---- Despacho de visualización: todas las llamadas van a la vista activa.
+  // Visualizer3D es un módulo ESM cargado desde CDN; si no llegó a cargar
+  // (sin conexión), la app sigue solo con la vista 2D
+
+  function viz() {
+    return state.view !== '2d' && window.Visualizer3D ? window.Visualizer3D : Visualizer;
+  }
+
+  function vizRender() {
+    if (state.piece) viz().renderPiece(state.piece);
+  }
+
+  function setView(view) {
+    const select = document.getElementById('select-view');
+    if (view !== '2d' && !window.Visualizer3D) {
+      select.value = '2d';
+      select.disabled = true;
+      select.title = 'THREE.js no se pudo cargar (¿sin conexión?)';
+      return;
+    }
+    state.view = view;
+    select.value = view;
+    const is3d = view !== '2d';
+    document.getElementById('grid-container').classList.toggle('hidden', is3d);
+    document.getElementById('viz3d-container').classList.toggle('hidden', !is3d);
+    if (window.Visualizer3D) {
+      if (is3d) {
+        Visualizer3D.init('viz3d-container');
+        Visualizer3D.setMode(view);
+      }
+      Visualizer3D.setActive(is3d);
+    }
+    vizRender();
+    if (state.cursorStep >= 0) viz().setCursor(state.cursorStep);
+    scheduleSave();
+  }
 
   // edited: definición { base, params, chain } del editor de sintes; tiene
   // prioridad sobre preset al configurar el motor y persiste entre generaciones
   const DEFAULT_TRACK_SETTINGS = { preset: 'random', volume: 0.8, reverb: 0.2, delay: 0, pan: 0, panTouched: false, edited: null };
 
+  // ---- Persistencia de ajustes (localStorage) ----
+  // Todo cambio de la UI (topbar, diálogos, panel de pistas y editor de sintes)
+  // se guarda con debounce y se restaura al cargar la página. Los presets de
+  // usuario del editor viven aparte en binario.userPresets
+
+  const LS_SETTINGS_KEY = 'binario.settings';
+  let saveTimer = null;
+
+  function loadSettings() {
+    try {
+      const data = JSON.parse(localStorage.getItem(LS_SETTINGS_KEY));
+      return data && data.v === 1 ? data : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function collectSettings() {
+    return {
+      v: 1,
+      ui: getUIState(),
+      audioEnabled: document.getElementById('checkbox-audio').checked,
+      midiOutput: document.getElementById('select-midi-out').value,
+      fx: {
+        delaydiv: document.getElementById('slider-delaydiv').value,
+        feedback: document.getElementById('slider-feedback').value,
+        master: document.getElementById('slider-master').value,
+        revdecay: document.getElementById('slider-revdecay').value
+      },
+      trackSettings: state.trackSettings,
+      resolvedPresets: state.resolvedPresets
+    };
+  }
+
+  function scheduleSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(LS_SETTINGS_KEY, JSON.stringify(collectSettings()));
+      } catch (e) {
+        // almacenamiento lleno o bloqueado: la app sigue, solo sin persistir
+      }
+    }, 250);
+  }
+
+  // Escribe el valor y dispara el evento del control para reutilizar sus
+  // manejadores (labels, AudioEngine, retune…). En selects, si la opción
+  // guardada ya no existe se queda el valor por defecto sin disparar nada
+  function setControl(id, value, eventType) {
+    const el = document.getElementById(id);
+    if (!el || value === undefined || value === null) return;
+    if (el.type === 'checkbox') {
+      el.checked = value === true;
+    } else {
+      el.value = String(value);
+      if (el.tagName === 'SELECT' && el.value !== String(value)) return;
+    }
+    el.dispatchEvent(new Event(eventType, { bubbles: true }));
+  }
+
+  function restoreSettings(saved) {
+    if (!saved) return;
+    const ui = saved.ui || {};
+    setControl('slider-tempo', ui.tempo, 'input');
+    setControl('slider-tracks', ui.numTracks, 'input');
+    setControl('slider-duration', ui.duration, 'input');
+    setControl('select-preset', ui.preset, 'change');
+    setControl('select-scale', ui.scale, 'change');
+    setControl('select-key', ui.key, 'change');
+    setControl('select-form', ui.formChoice, 'change');
+    setControl('checkbox-autogen', ui.autogen, 'change');
+    setControl('checkbox-autorestart', ui.autorestart, 'change');
+    setControl('checkbox-audio', saved.audioEnabled, 'change');
+    // compat: sesiones guardadas antes del selector de vista usaban viz3d bool
+    const savedView = ui.view || (ui.viz3d ? 'city' : '2d');
+    if (savedView !== '2d') setView(savedView);
+    const fx = saved.fx || {};
+    setControl('slider-delaydiv', fx.delaydiv, 'input');
+    setControl('slider-feedback', fx.feedback, 'input');
+    setControl('slider-master', fx.master, 'input');
+    setControl('slider-revdecay', fx.revdecay, 'input');
+
+    // Contornos: se marcan los guardados que sigan existiendo
+    if (Array.isArray(ui.contours)) {
+      document.querySelectorAll('#contour-ms-list input').forEach(cb => {
+        cb.checked = ui.contours.includes(cb.value);
+      });
+      updateContourLabel();
+    }
+
+    // Ajustes por pista, fusionados con los defaults por si el esquema creció;
+    // elecciones que apunten a presets de usuario borrados vuelven a aleatorio
+    if (Array.isArray(saved.trackSettings)) {
+      const valid = new Set(SynthEditor.getUserPresetNames().map(n => SynthEditor.USER_PREFIX + n));
+      state.trackSettings = saved.trackSettings.map((s, i) => {
+        const merged = { ...DEFAULT_TRACK_SETTINGS, midiChannel: (i % 16) + 1, ...s };
+        if (merged.preset.startsWith(SynthEditor.USER_PREFIX) && !valid.has(merged.preset)) {
+          merged.preset = 'random';
+        }
+        return merged;
+      });
+      state.resolvedPresets = (Array.isArray(saved.resolvedPresets) ? saved.resolvedPresets : [])
+        .map(p => (p && p.startsWith(SynthEditor.USER_PREFIX) && !valid.has(p) ? null : p));
+    }
+  }
+
   function escapeHtml(s) {
     return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  function setupMidi() {
+  function setupMidi(savedOutput) {
     const select = document.getElementById('select-midi-out');
     const audioCheckbox = document.getElementById('checkbox-audio');
     audioCheckbox.addEventListener('change', () => AudioEngine.setEnabled(audioCheckbox.checked));
@@ -26,9 +173,13 @@ const App = (() => {
       return;
     }
 
+    // Salida guardada de la sesión anterior, pendiente de que su puerto
+    // aparezca (los puertos llegan async y pueden conectarse en caliente)
+    let pendingOutput = savedOutput || null;
+
     const refreshOutputs = () => {
       const outputs = MidiEngine.getOutputs();
-      const current = select.value;
+      const current = select.value || pendingOutput;
       select.innerHTML = '';
       const none = document.createElement('option');
       none.value = '';
@@ -40,8 +191,16 @@ const App = (() => {
         option.textContent = out.name;
         select.appendChild(option);
       }
-      // conserva la selección si el puerto sigue conectado
-      select.value = outputs.some(o => o.id === current) ? current : '';
+      // conserva la selección (o restaura la guardada) si el puerto está conectado
+      if (current && outputs.some(o => o.id === current)) {
+        select.value = current;
+        if (current === pendingOutput) {
+          MidiEngine.selectOutput(current);
+          pendingOutput = null;
+        }
+      } else {
+        select.value = '';
+      }
     };
 
     MidiEngine.setOnDevicesChanged(refreshOutputs);
@@ -54,7 +213,11 @@ const App = (() => {
       refreshOutputs();
     });
 
-    select.addEventListener('change', () => MidiEngine.selectOutput(select.value || null));
+    select.addEventListener('change', () => {
+      // una elección manual anula la restauración pendiente
+      pendingOutput = null;
+      MidiEngine.selectOutput(select.value || null);
+    });
   }
 
   // Reparte las pistas por el espectro estéreo: T1 a la izquierda, la última a la derecha
@@ -75,7 +238,8 @@ const App = (() => {
       key: parseInt(document.getElementById('select-key').value),
       formChoice: document.getElementById('select-form').value,
       autogen: document.getElementById('checkbox-autogen').checked,
-      autorestart: document.getElementById('checkbox-autorestart').checked
+      autorestart: document.getElementById('checkbox-autorestart').checked,
+      view: state.view
     };
   }
 
@@ -136,10 +300,10 @@ const App = (() => {
     });
   }
 
-  function setupUI() {
+  function setupUI(saved) {
     setupDialogs();
     setupContourMultiselect();
-    setupMidi();
+    setupMidi(saved && saved.midiOutput);
 
     const sliderTempo = document.getElementById('slider-tempo');
 
@@ -194,19 +358,21 @@ const App = (() => {
     document.getElementById('btn-generate').addEventListener('click', generate);
     document.getElementById('btn-play').addEventListener('click', play);
     document.getElementById('btn-stop').addEventListener('click', stop);
+    document.getElementById('select-view').addEventListener('change', e => setView(e.target.value));
 
     // Tonalidad y escala se aplican en vivo sobre la pieza actual
     const retuneCurrent = () => {
       if (!state.piece) return;
       const ui = getUIState();
       Composer.retune(ui.scale, ui.key);
-      Visualizer.renderPiece(state.piece);
+      vizRender();
     };
     document.getElementById('select-key').addEventListener('change', retuneCurrent);
     document.getElementById('select-scale').addEventListener('change', retuneCurrent);
 
+    // La vista 3D se redimensiona sola (ResizeObserver); el canvas 2D no
     window.addEventListener('resize', () => {
-      if (state.piece) Visualizer.renderPiece(state.piece);
+      if (state.view === '2d' && state.piece) Visualizer.renderPiece(state.piece);
     });
   }
 
@@ -298,9 +464,11 @@ const App = (() => {
     const contourInfo = extraContours.length ? `${motherCell.contour} (variaciones: ${extraContours.join(', ')})` : motherCell.contour;
     console.log(`Pieza generada — contorno: ${contourInfo}, forma: ${formStr}, quinta cada ${fifthSteps} repeticiones`);
 
-    Visualizer.renderPiece(state.piece);
+    vizRender();
     buildTrackPanel(ui.numTracks);
     SynthEditor.ensureValid(ui.numTracks);
+    // los presets sorteados forman parte de lo que se restaura al recargar
+    scheduleSave();
   }
 
   function randomOptionLabel(trackIndex) {
@@ -402,9 +570,13 @@ const App = (() => {
     if (Composer.getIsPlaying()) return;
 
     Composer.play(
-      step => Visualizer.setCursor(step),
+      step => {
+        state.cursorStep = step;
+        viz().setCursor(step);
+      },
       () => {
-        Visualizer.clearCursor();
+        state.cursorStep = -1;
+        viz().clearCursor();
         const ui = getUIState();
         if (ui.autorestart || ui.autogen) {
           setTimeout(() => {
@@ -417,8 +589,14 @@ const App = (() => {
   }
 
   function stop() {
+    const wasPlaying = Composer.getIsPlaying();
     Composer.stop();
-    Visualizer.clearCursor();
+    // En pausa el cursor queda marcando el punto de reanudación; el segundo
+    // stop (ya parado) rebobina a 0 y lo limpia
+    if (!wasPlaying) {
+      state.cursorStep = -1;
+      viz().clearCursor();
+    }
   }
 
   function setupSynthEditor() {
@@ -426,6 +604,7 @@ const App = (() => {
       onChange: (t, def) => {
         ensureTrackSettings(t + 1);
         state.trackSettings[t].edited = def;
+        scheduleSave();
       },
       onPresetsChanged: () => {
         // limpia elecciones que apunten a presets de usuario borrados
@@ -437,6 +616,7 @@ const App = (() => {
           }
         });
         buildTrackPanel(currentNumTracks());
+        scheduleSave();
       },
       onPresetSaved: (t, name) => {
         const settings = state.trackSettings[t];
@@ -444,16 +624,25 @@ const App = (() => {
         settings.edited = null;
         state.resolvedPresets[t] = settings.preset;
         buildTrackPanel(currentNumTracks());
+        scheduleSave();
       }
     });
   }
 
   function init() {
-    setupUI();
+    const saved = loadSettings();
+    setupUI(saved);
     setupSynthEditor();
+    restoreSettings(saved);
     updateLabels();
     Visualizer.init('grid-canvas');
     generate();
+    // Autosave global: cualquier input/change que burbujee (topbar, diálogos,
+    // panel de pistas) reprograma el guardado. Se engancha tras restaurar para
+    // no guardar en medio de la propia restauración; el editor de sintes pasa
+    // por sus callbacks (onChange/onPresetsChanged/onPresetSaved)
+    document.addEventListener('input', scheduleSave);
+    document.addEventListener('change', scheduleSave);
   }
 
   return { init, generate, play, stop };

@@ -1,13 +1,13 @@
 ---
 name: test-generator
-description: Probar headless con Node la lógica de generación y composición (generator.js, humanizer.js, counterpoint.js, composer.js) sin navegador ni Tone.js. Usar tras cambiar generación de células, contornos, variaciones, formas, humanización, contrapunto o composición, antes de dar el cambio por bueno.
+description: Probar headless con Node la lógica de generación y composición (generator.js, humanizer.js, energy.js, counterpoint.js, composer.js) sin navegador ni Tone.js. Usar tras cambiar generación de células, contornos, variaciones, formas, humanización, energía, contrapunto o composición, antes de dar el cambio por bueno.
 ---
 
 # Probar el generador sin navegador
 
-`generator.js`, `humanizer.js` y `counterpoint.js` no dependen del DOM ni de
-Tone.js, y `Composer.compose` solo usa esos tres. Se pueden verificar con Node
-evaluando los IIFE y exponiendo los globals.
+`generator.js`, `humanizer.js`, `energy.js` y `counterpoint.js` no dependen del
+DOM ni de Tone.js, y `Composer.compose` solo usa esos cuatro. Se pueden
+verificar con Node evaluando los IIFE y exponiendo los globals.
 
 ## Harness
 
@@ -16,6 +16,7 @@ node -e "
 const fs = require('fs');
 eval(fs.readFileSync('js/generator.js', 'utf8') + ';globalThis.Generator = Generator;');
 eval(fs.readFileSync('js/humanizer.js', 'utf8') + ';globalThis.Humanizer = Humanizer;');
+eval(fs.readFileSync('js/energy.js', 'utf8') + ';globalThis.Energy = Energy;');
 eval(fs.readFileSync('js/counterpoint.js', 'utf8') + ';globalThis.Counterpoint = Counterpoint;');
 eval(fs.readFileSync('js/composer.js', 'utf8') + ';globalThis.Composer = Composer;');
 // ... pruebas aquí ...
@@ -28,6 +29,8 @@ Notas:
 - No cargar `audio.js`/`visualizer.js`/`app.js`: dependen de `Tone`/DOM.
 - `Composer.play/stop` usan `Tone` — solo probar `compose`, `retune`, `getPiece`.
 - Rutas relativas a la raíz del repo (ejecutar desde ahí).
+- Las formas se escriben con guiones: `parseForm('A-A-B-A')` → 4 secciones
+  (`'AABA'` sería UNA sección llamada "AABA").
 
 ## Invariantes a verificar según lo tocado
 
@@ -60,6 +63,23 @@ tiene distinto al de la madre.
   `degreeToMidi`; el resultado siempre pertenece a la escala transportada
   `keyOffset` semitonos; dista a lo sumo ±1 semitono de la nota en tonalidad
   base (conserva alturas, no transpone); la cromática nunca se altera.
+
+**Energía** (`Energy.balance`, corre dentro de `compose` tras humanizar y antes
+del contrapunto):
+- Determinista e idempotente: re-ejecutar `balance` sobre una rejilla ya
+  equilibrada devuelve `stats.removed === 0`.
+- Solo borra celdas y sube `sustain`; en las celdas que quedan no cambia
+  `degree`, `midi` ni `velocity` (retune-safe) y `sustain` nunca baja.
+- Nunca retira: tiempos fuertes (`s % 4 === 0`), la primera repetición de cada
+  bloque, la última nota de cada bloque, las pistas de primer plano
+  (`max(1, ceil(numTracks/3))` más salientes por ventana) ni la pista de
+  recapitulación en su sección (`section.recapTrack`).
+- Presupuesto por ventana de `cellLength` pasos: ataques audibles
+  (velocity > 0.18) ≤ `round(cellLength × (0.9 + 0.9 × curva))`, con curva en
+  arco que culmina al 65% de la pieza — o, si no se alcanza, toda nota
+  restante de las pistas de fondo está protegida.
+- Sobre piezas completas la poda es moderada (~4–8% de las notas con 5–6
+  pistas; con 1–2 pistas apenas actúa).
 
 **Contrapunto** (`Counterpoint.enforce`, corre dentro de `compose`):
 - En todo paso múltiplo de 4, ninguna pareja de notas audibles (velocity > 0.2)
