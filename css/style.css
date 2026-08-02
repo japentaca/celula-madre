@@ -56,6 +56,151 @@ body {
   accent-color: #6c63ff;
 }
 
+/* Diálogos popup (Popover API): cierre por clic fuera o Esc lo da el navegador;
+   la posición bajo su botón la fija app.js en cada apertura */
+.dialog {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  min-width: 280px;
+  padding: 0;
+  background: #16213e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4e;
+  border-radius: 6px;
+  font-family: monospace;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  /* el UA pone overflow:auto en [popover]; visible para que el desplegable
+     de contornos pueda sobresalir del diálogo sin generar scrollbar */
+  overflow: visible;
+}
+
+.dialog::backdrop {
+  background: transparent;
+}
+
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid #2a2a4e;
+  color: #8888aa;
+  font-size: 12px;
+}
+
+.dialog-close {
+  background: none;
+  border: none;
+  color: #8888aa;
+  font-family: monospace;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.dialog-close:hover {
+  color: #e0e0e0;
+}
+
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.dialog-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.dialog-row label {
+  color: #8888aa;
+  white-space: nowrap;
+}
+
+.dialog-row input[type="range"] {
+  width: 100%;
+  accent-color: #6c63ff;
+}
+
+.dialog-row input[type="checkbox"] {
+  accent-color: #6c63ff;
+  justify-self: start;
+}
+
+.dialog-row select {
+  background: #10182e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4e;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-family: monospace;
+  min-width: 0;
+}
+
+.dialog-val {
+  text-align: right;
+  font-size: 11px;
+}
+
+/* Botón del topbar con su diálogo abierto */
+#topbar button.dialog-open {
+  background: #6c63ff;
+}
+
+.multiselect {
+  position: relative;
+}
+
+.multiselect-btn {
+  background: #10182e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4e;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: monospace;
+  cursor: pointer;
+}
+
+.multiselect-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #10182e;
+  border: 1px solid #2a2a4e;
+  border-radius: 3px;
+  padding: 6px 10px;
+  min-width: 130px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.multiselect-list.hidden {
+  display: none;
+}
+
+.multiselect-list label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-family: monospace;
+  color: #e0e0e0;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .topbar-group span {
   font-size: 11px;
   min-width: 24px;
@@ -110,7 +255,8 @@ body {
   font-size: 10px;
 }
 
-/* Alineado con topBar (24px) y trackHeight (44px) del visualizador */
+/* Alineado con topBar (24px) del visualizador; el alto de tira sigue a
+   --track-height, que el visualizador fija según las pistas generadas */
 #track-panel .panel-spacer {
   height: 24px;
   display: flex;
@@ -122,13 +268,15 @@ body {
 }
 
 .track-strip {
-  height: 44px;
+  height: var(--track-height, 44px);
   padding: 3px 8px;
   border-bottom: 1px solid #1a1a2e;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: space-evenly;
   gap: 2px;
+  /* Contenedor de query por altura: los controles se despliegan en pistas altas */
+  container-type: size;
 }
 
 .track-strip .strip-row {
@@ -160,6 +308,16 @@ body {
   cursor: help;
 }
 
+/* Canal MIDI: ancho fijo, no compite con el select de preset (flex: 1) */
+.track-strip .strip-chan {
+  flex: 0 0 auto;
+  width: 36px;
+}
+
+#select-midi-out {
+  max-width: 150px;
+}
+
 .track-strip input[type="range"] {
   width: 50px;
   height: 10px;
@@ -170,4 +328,28 @@ body {
 .track-strip .strip-pan {
   width: 44px;
   flex-shrink: 0;
+}
+
+/* Tira alta (pocas pistas): los controles se despliegan, cada slider en su
+   propia línea a lo ancho; por debajo del umbral rige el modo compacto */
+@container (min-height: 88px) {
+  .track-strip .strip-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  /* Etiqueta (12%) + control (80%) llenan la línea: el siguiente par
+     ya no cabe y salta, así cada slider queda bajo su propia etiqueta */
+  .track-strip .strip-preset {
+    flex: 1 1 80%;
+  }
+  .track-strip input[type="range"] {
+    flex: 1 1 80%;
+    width: auto;
+    height: 12px;
+  }
+  .track-strip .strip-label,
+  .track-strip .mini-label {
+    flex: 0 0 12%;
+    width: auto;
+  }
 }

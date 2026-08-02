@@ -10,7 +10,7 @@ const Visualizer = (() => {
   let trackHeight = 44;
   const headerWidth = 50;
   const topBar = 24;
-  const noteHeight = 6;
+  let noteHeight = 6;
 
   // Color por motivo: [0] célula madre, resto variaciones
   const MOTIF_COLORS = [
@@ -34,6 +34,19 @@ const Visualizer = (() => {
   function containerWidth() {
     const container = document.getElementById('grid-container');
     return container ? container.clientWidth : 800;
+  }
+
+  function containerHeight() {
+    const container = document.getElementById('grid-container');
+    return container ? container.clientHeight : 400;
+  }
+
+  // Las pistas se reparten el alto disponible (mínimo usable con scroll);
+  // el panel lateral se alinea leyendo la variable CSS --track-height.
+  // Si la pieza desborda a lo ancho se reserva el alto de la barra de scroll
+  function computeTrackHeight(numTracks, needsHScroll) {
+    const avail = containerHeight() - topBar - (needsHScroll ? 17 : 0);
+    return Math.max(44, Math.floor(avail / numTracks));
   }
 
   // Ajusta el ancho de celda para que la pieza llene la ventana;
@@ -66,6 +79,9 @@ const Visualizer = (() => {
 
     cellWidth = computeCellWidth(piece.totalSteps);
     const width = Math.max(containerWidth(), headerWidth + piece.totalSteps * cellWidth);
+    trackHeight = computeTrackHeight(piece.numTracks, width > containerWidth());
+    noteHeight = Math.max(6, Math.min(14, Math.round(trackHeight / 7)));
+    document.documentElement.style.setProperty('--track-height', trackHeight + 'px');
     const height = topBar + piece.numTracks * trackHeight;
 
     canvas.width = width;

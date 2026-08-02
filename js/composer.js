@@ -119,8 +119,15 @@ const Composer = (() => {
     const stepEvents = Array.from({ length: totalSteps }, () => []);
     const blockMarkers = [];
 
+    // Modulación: cada fifthSteps repeticiones de célula acumuladas la tonalidad
+    // avanza una quinta (+7 semitonos, mod 12); constante dentro de cada sección,
+    // así que el cambio siempre cae en una frontera de sección. Es una modulación
+    // suave: las alturas se conservan y solo se alteran las notas ajenas a la
+    // tonalidad nueva (ver degreeToMidiInKey)
     let pos = 0;
+    let cumRepeats = 0;
     for (const section of sections) {
+      section.keyOffset = fifthSteps ? (Math.floor(cumRepeats / fifthSteps) * 7) % 12 : 0;
       const sectionSteps = cellLength * section.totalRepeats;
       for (let t = 0; t < numTracks; t++) {
         const blocks = section.trackBlocks[t];
@@ -133,10 +140,11 @@ const Composer = (() => {
             for (let s = 0; s < blockSteps; s++) {
               const step = motif[s % motif.length];
               if (!step.note) continue;
-              const midi = Generator.degreeToMidi(step.degree, scale, key, fifthSteps);
+              const midi = Generator.degreeToMidiInKey(step.degree, scale, key, section.keyOffset);
               grid[t][blockPos + s] = {
                 midi,
                 degree: step.degree,
+                keyOffset: section.keyOffset,
                 velocity: step.velocity,
                 sustain: step.sustain,
                 motifIndex: block.motifIndex
@@ -155,11 +163,21 @@ const Composer = (() => {
       section.startStep = pos;
       section.lengthSteps = sectionSteps;
       pos += sectionSteps;
+      cumRepeats += section.totalRepeats;
     }
+
+    // Humanización: retoca notas, dinámica y articulación trabajando en grados;
+    // debe ir antes de las duraciones porque añade/quita notas y cambia huecos
+    Humanizer.humanize({ grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key });
+
+    // Contrapunto: consonancia vertical entre pistas (mueve grados ±1, apaga o
+    // acorta notas). Va tras humanizar, para vigilar también las notas que la
+    // humanización añade, y antes de las duraciones, porque ajusta sustains
+    Counterpoint.enforce({ grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key });
 
     // Duraciones: cada nota sostiene una fracción (sustain) del hueco hasta la
     // siguiente nota de su pista — legato como máximo, nunca superposición
-    const MAX_SUSTAIN_STEPS = 8;
+    const MAX_SUSTAIN_STEPS = 16;
     for (let t = 0; t < numTracks; t++) {
       const row = grid[t];
       const notePositions = [];
@@ -176,6 +194,7 @@ const Composer = (() => {
           trackIndex: t,
           midi: cell.midi,
           degree: cell.degree,
+          keyOffset: cell.keyOffset,
           velocity: cell.velocity,
           durationSteps
         });
@@ -191,19 +210,20 @@ const Composer = (() => {
   }
 
   // Re-mapea los grados de la pieza actual a otra tonalidad/escala sin regenerarla;
-  // funciona también en plena reproducción
+  // funciona también en plena reproducción. Conserva la modulación por secciones
+  // aplicando el keyOffset guardado en cada nota
   function retune(scale, key) {
     if (!piece) return;
     piece.scale = scale;
     piece.key = key;
     for (const row of piece.grid) {
       for (const cell of row) {
-        if (cell) cell.midi = Generator.degreeToMidi(cell.degree, scale, key, piece.fifthSteps);
+        if (cell) cell.midi = Generator.degreeToMidiInKey(cell.degree, scale, key, cell.keyOffset);
       }
     }
     for (const events of piece.stepEvents) {
       for (const ev of events) {
-        ev.midi = Generator.degreeToMidi(ev.degree, scale, key, piece.fifthSteps);
+        ev.midi = Generator.degreeToMidiInKey(ev.degree, scale, key, ev.keyOffset);
       }
     }
   }
@@ -231,6 +251,7 @@ const Composer = (() => {
       for (const ev of piece.stepEvents[step]) {
         const duration = ev.durationSteps * stepSeconds * 0.95;
         AudioEngine.playNote(ev.trackIndex, ev.midi, time, duration, ev.velocity);
+        MidiEngine.playNote(ev.trackIndex, ev.midi, time, duration, ev.velocity);
       }
       Tone.Draw.schedule(() => {
         if (isPlaying && onStep) onStep(step);
@@ -251,6 +272,7 @@ const Composer = (() => {
     Tone.Transport.cancel();
     Tone.Transport.position = 0;
     currentStep = 0;
+    MidiEngine.allNotesOff();
   }
 
   function getIsPlaying() {

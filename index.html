@@ -15,83 +15,159 @@
     </div>
     <div class="topbar-group">
       <label>Tempo</label>
-      <input type="range" id="slider-tempo" min="40" max="240" value="120">
+      <input type="range" id="slider-tempo" min="5" max="150" value="120">
       <span id="val-tempo">120</span>
     </div>
     <div class="topbar-group">
-      <label>Pistas</label>
-      <input type="range" id="slider-tracks" min="1" max="8" value="4">
-      <span id="val-tracks">4</span>
-    </div>
-    <div class="topbar-group">
-      <label>Duración</label>
-      <input type="range" id="slider-duration" min="1" max="8" value="4">
-      <span id="val-duration">4</span>
-    </div>
-    <div class="topbar-group">
-      <label>Forma</label>
-      <select id="select-form">
-        <option value="random">Aleatoria</option>
-        <option value="A-B-A">A-B-A</option>
-        <option value="A-B-C-B-D-D-D-A">A-B-C-B-D-D-D-A</option>
-        <option value="A-A-B-B">A-A-B-B</option>
-        <option value="A-B-C-D">A-B-C-D</option>
-        <option value="A-B-A-C-A">A-B-A-C-A</option>
-        <option value="A-B-C-A-B">A-B-C-A-B</option>
-        <option value="A-A-B-B-C-C-A">A-A-B-B-C-C-A</option>
-        <option value="A-B-C-D-C-B-A">A-B-C-D-C-B-A</option>
-      </select>
-    </div>
-    <div class="topbar-group">
-      <label>Preset</label>
-      <select id="select-preset">
-        <option value="random" selected>Aleatorio (por pista)</option>
-        <option value="Synth">Synth</option>
-        <option value="FMSynth">FMSynth</option>
-        <option value="AMSynth">AMSynth</option>
-        <option value="MonoSynth">MonoSynth</option>
-        <option value="DuoSynth">DuoSynth</option>
-        <option value="PluckSynth">PluckSynth</option>
-        <option value="SynthPair">SynthPair</option>
-      </select>
-    </div>
-    <div class="topbar-group">
-      <label>Escala</label>
-      <select id="select-scale">
-        <option value="major">Mayor</option>
-        <option value="minor">Menor</option>
-        <option value="pentatonic">Pentatónica</option>
-        <option value="dorian">Doria</option>
-        <option value="mixolydian">Misolidia</option>
-        <option value="chromatic">Cromática</option>
-      </select>
-    </div>
-    <div class="topbar-group">
-      <label>Tonalidad</label>
-      <select id="select-key">
-        <option value="0">C</option>
-        <option value="1">C#</option>
-        <option value="2">D</option>
-        <option value="3">D#</option>
-        <option value="4">E</option>
-        <option value="5">F</option>
-        <option value="6">F#</option>
-        <option value="7">G</option>
-        <option value="8">G#</option>
-        <option value="9">A</option>
-        <option value="10">A#</option>
-        <option value="11">B</option>
-      </select>
-    </div>
-    <div class="topbar-group">
-      <label>Auto-generar</label>
-      <input type="checkbox" id="checkbox-autogen" checked>
-    </div>
-    <div class="topbar-group">
-      <label>Auto-reinicio</label>
-      <input type="checkbox" id="checkbox-autorestart">
+      <button popovertarget="dlg-generation" class="dialog-btn">Generación ▾</button>
+      <button popovertarget="dlg-effects" class="dialog-btn">Efectos ▾</button>
+      <button popovertarget="dlg-output" class="dialog-btn">Salida ▾</button>
     </div>
   </header>
+
+  <div id="dlg-generation" class="dialog" popover>
+    <div class="dialog-header">
+      <span>Generación</span>
+      <button class="dialog-close" popovertarget="dlg-generation" popovertargetaction="hide">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div class="dialog-row">
+        <label>Pistas</label>
+        <input type="range" id="slider-tracks" min="1" max="8" value="4">
+        <span class="dialog-val" id="val-tracks">4</span>
+      </div>
+      <div class="dialog-row">
+        <label>Duración</label>
+        <input type="range" id="slider-duration" min="1" max="8" value="4">
+        <span class="dialog-val" id="val-duration">4</span>
+      </div>
+      <div class="dialog-row">
+        <label title="Algoritmos de contorno melódico permitidos; sin selección se elige al azar entre todos">Contorno</label>
+        <div class="multiselect" id="contour-multiselect">
+          <button type="button" id="contour-ms-btn" class="multiselect-btn">(Al azar)</button>
+          <div id="contour-ms-list" class="multiselect-list hidden"></div>
+        </div>
+        <span class="dialog-val"></span>
+      </div>
+      <div class="dialog-row">
+        <label>Forma</label>
+        <select id="select-form">
+          <option value="random">Aleatoria</option>
+          <option value="A-B-A">A-B-A</option>
+          <option value="A-B-C-B-D-D-D-A">A-B-C-B-D-D-D-A</option>
+          <option value="A-A-B-B">A-A-B-B</option>
+          <option value="A-B-C-D">A-B-C-D</option>
+          <option value="A-B-A-C-A">A-B-A-C-A</option>
+          <option value="A-B-C-A-B">A-B-C-A-B</option>
+          <option value="A-A-B-B-C-C-A">A-A-B-B-C-C-A</option>
+          <option value="A-B-C-D-C-B-A">A-B-C-D-C-B-A</option>
+        </select>
+        <span class="dialog-val"></span>
+      </div>
+      <div class="dialog-row">
+        <label>Preset</label>
+        <select id="select-preset">
+          <option value="random" selected>Aleatorio (por pista)</option>
+          <option value="Synth">Synth</option>
+          <option value="FMSynth">FMSynth</option>
+          <option value="AMSynth">AMSynth</option>
+          <option value="MonoSynth">MonoSynth</option>
+          <option value="SynthPair">SynthPair</option>
+        </select>
+        <span class="dialog-val"></span>
+      </div>
+      <div class="dialog-row">
+        <label>Escala</label>
+        <select id="select-scale">
+          <option value="major">Mayor</option>
+          <option value="minor">Menor</option>
+          <option value="pentatonic">Pentatónica</option>
+          <option value="dorian">Doria</option>
+          <option value="mixolydian">Misolidia</option>
+          <option value="chromatic">Cromática</option>
+        </select>
+        <span class="dialog-val"></span>
+      </div>
+      <div class="dialog-row">
+        <label>Tonalidad</label>
+        <select id="select-key">
+          <option value="0">C</option>
+          <option value="1">C#</option>
+          <option value="2">D</option>
+          <option value="3">D#</option>
+          <option value="4">E</option>
+          <option value="5">F</option>
+          <option value="6">F#</option>
+          <option value="7">G</option>
+          <option value="8">G#</option>
+          <option value="9">A</option>
+          <option value="10">A#</option>
+          <option value="11">B</option>
+        </select>
+        <span class="dialog-val"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="dlg-effects" class="dialog" popover>
+    <div class="dialog-header">
+      <span>Efectos</span>
+      <button class="dialog-close" popovertarget="dlg-effects" popovertargetaction="hide">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div class="dialog-row">
+        <label title="Subdivisión rítmica del delay (sigue al tempo)">Delay</label>
+        <input type="range" id="slider-delaydiv" min="0" max="9" value="5">
+        <span class="dialog-val" id="val-delaydiv">1/8·</span>
+      </div>
+      <div class="dialog-row">
+        <label title="Realimentación del delay (cantidad de repeticiones)">Feedback</label>
+        <input type="range" id="slider-feedback" min="0" max="0.9" step="0.01" value="0.35">
+        <span class="dialog-val" id="val-feedback">0.35</span>
+      </div>
+      <div class="dialog-row">
+        <label title="Duración de la cola del reverb (segundos)">Reverb</label>
+        <input type="range" id="slider-revdecay" min="0.5" max="12" step="0.1" value="3">
+        <span class="dialog-val" id="val-revdecay">3.0s</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="dlg-output" class="dialog" popover>
+    <div class="dialog-header">
+      <span>Salida</span>
+      <button class="dialog-close" popovertarget="dlg-output" popovertargetaction="hide">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div class="dialog-row">
+        <label title="Volumen general de la salida de audio">Volumen</label>
+        <input type="range" id="slider-master" min="0" max="1" step="0.01" value="0.6">
+        <span class="dialog-val" id="val-master">0.60</span>
+      </div>
+      <div class="dialog-row">
+        <label title="Salida MIDI para disparar instrumentos externos (VST vía puerto MIDI virtual, hardware…)">MIDI</label>
+        <select id="select-midi-out">
+          <option value="">(sin salida)</option>
+        </select>
+        <span class="dialog-val"></span>
+      </div>
+      <div class="dialog-row">
+        <label title="Render de audio interno (WebAudio); desmárcalo si solo quieres la salida MIDI">Audio</label>
+        <input type="checkbox" id="checkbox-audio" checked>
+        <span class="dialog-val"></span>
+      </div>
+      <div class="dialog-row">
+        <label>Auto-generar</label>
+        <input type="checkbox" id="checkbox-autogen" checked>
+        <span class="dialog-val"></span>
+      </div>
+      <div class="dialog-row">
+        <label>Auto-reinicio</label>
+        <input type="checkbox" id="checkbox-autorestart">
+        <span class="dialog-val"></span>
+      </div>
+    </div>
+  </div>
   <main id="workspace">
     <div id="grid-container">
       <canvas id="grid-canvas"></canvas>
@@ -100,8 +176,11 @@
   </main>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <script src="js/audio.js"></script>
+  <script src="js/midi.js"></script>
   <script src="js/visualizer.js"></script>
   <script src="js/generator.js"></script>
+  <script src="js/humanizer.js"></script>
+  <script src="js/counterpoint.js"></script>
   <script src="js/composer.js"></script>
   <script src="js/app.js"></script>
 </body>
