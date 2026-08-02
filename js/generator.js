@@ -14,7 +14,7 @@ const Generator = (() => {
   // paso en el ciclo de quintas; potencias de 2: valores bajos modulan a
   // menudo, altos casi nunca. Independiente del tamaño de célula y de las
   // repeticiones.
-  const FIFTH_STEPS = [2, 4, 8, 16, 32];
+  const FIFTH_STEPS = [4, 8, 16, 32];
 
   const FORMS = [
     'A-B-A',
@@ -578,12 +578,17 @@ const Generator = (() => {
     return base + key + intervals[idx] + octave * 12;
   }
 
+  // keyOffsets del lado bemol del viaje de quintas (w en [-4, -1]); como el
+  // viaje está acotado a ±4, el keyOffset identifica el signo sin ambigüedad
+  const FLAT_KEY_OFFSETS = new Set([3, 5, 8, 10]);
+
   // Modulación suave: la nota se calcula siempre en la tonalidad base y, si no
   // pertenece a la escala transportada keyOffset semitonos, se ajusta al
-  // semitono más cercano (preferencia ascendente: en el ciclo de quintas las
-  // alteraciones nuevas son siempre notas subidas, p. ej. Fa -> Fa# de Do a
-  // Sol). Conserva el registro: modular no transpone la melodía, solo altera
-  // las notas ajenas a la tonalidad nueva. La cromática nunca se altera
+  // semitono más cercano siguiendo la armadura: hacia el lado de los sostenidos
+  // las alteraciones suben (Fa -> Fa# de Do a Sol) y hacia el de los bemoles
+  // bajan (Si -> Sib de Do a Fa) — así dos grados vecinos nunca colapsan en la
+  // misma altura. Conserva el registro: modular no transpone la melodía, solo
+  // altera las notas ajenas a la tonalidad nueva. La cromática nunca se altera
   function degreeToMidiInKey(degree, scaleName, key, keyOffset, baseOctave) {
     const midi = degreeToMidi(degree, scaleName, key, baseOctave);
     if (!keyOffset) return midi;
@@ -591,9 +596,10 @@ const Generator = (() => {
     const pcs = new Set(intervals.map(i => (key + keyOffset + i) % 12));
     const pc = m => ((m % 12) + 12) % 12;
     if (pcs.has(pc(midi))) return midi;
+    const dir = FLAT_KEY_OFFSETS.has(keyOffset) ? -1 : 1;
     for (let d = 1; d <= 6; d++) {
-      if (pcs.has(pc(midi + d))) return midi + d;
-      if (pcs.has(pc(midi - d))) return midi - d;
+      if (pcs.has(pc(midi + dir * d))) return midi + dir * d;
+      if (pcs.has(pc(midi - dir * d))) return midi - dir * d;
     }
     return midi;
   }

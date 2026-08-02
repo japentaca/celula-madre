@@ -67,7 +67,7 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
 - **Pieza** (`Composer.compose`): `{ sections, totalSteps, grid, stepEvents,
   blockMarkers, numTracks, cellLength, scale, key, fifthSteps, contour }`.
   `grid[pista][paso]` para el visualizador; `stepEvents[paso]` para el transporte.
-- **Modulación por quintas**: cada `fifthSteps` (2/4/8/16/32) **semicorcheas**
+- **Modulación por quintas**: cada `fifthSteps` (4/8/16/32) **semicorcheas**
   (pasos del grid, la unidad de tiempo real de la pieza) desde el inicio, el
   viaje por el ciclo de quintas da un paso aleatorio de ±1 quinta (+7/−7
   semitonos), hacia adelante o hacia atrás, rebotando en el borde. Es
@@ -78,13 +78,15 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
   `stepEvents` lo copia para que `retune` pueda re-mapear sin perderlo. La
   modulación es **suave** (`Generator.degreeToMidiInKey`): la nota se calcula en
   la tonalidad base y solo se altera ±1 semitono si no pertenece a la escala
-  transportada — conserva alturas, no transpone; la cromática es insensible.
+  transportada, siguiendo la armadura — sube hacia el lado de los sostenidos,
+  baja hacia el de los bemoles, con lo que dos grados nunca colapsan en la
+  misma altura — conserva alturas, no transpone; la cromática es insensible.
 
 ## Invariantes (no romper)
 
 1. **Potencias de 2 en todas partes**: largos de célula, repeticiones de sección,
    particiones de bloques (`partitionRepeats` bisecciona), pasos de quintas
-   (2/4/8/16/32). El algoritmo `fractal` y `subsequence` dependen de esto.
+   (4/8/16/32). El algoritmo `fractal` y `subsequence` dependen de esto.
 2. **Dos pistas nunca tocan el mismo motivo a la vez** dentro de una sección
    (`slotUsage` en `composer.js`). Antes que duplicar, una pista calla.
 3. **`degree` siempre entero en [-7, 7]** al salir del generador; los contornos

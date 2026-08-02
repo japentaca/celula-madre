@@ -54,7 +54,7 @@ tiene distinto al de la madre.
 - `durationSteps >= 1` en toda nota y ninguna nota pisa la siguiente de su pista.
 - Letras de forma repetidas comparten spec (mismo `trackBlocks` por letra, salvo
   la sección de recapitulación).
-- Modulación por quintas: cada `fifthSteps` ∈ {2, 4, 8, 16, 32} **semicorcheas**
+- Modulación por quintas: cada `fifthSteps` ∈ {4, 8, 16, 32} **semicorcheas**
   (pasos del grid) desde el inicio de la pieza el viaje da un paso aleatorio de
   ±1 quinta; independiente del tamaño de célula y de las repeticiones, el cambio
   puede caer en medio de una sección. Cada nota lleva un `keyOffset` ∈
@@ -75,7 +75,10 @@ tiene distinto al de la madre.
 - Modulación suave (`degreeToMidiInKey`): con `keyOffset` 0 es idéntica a
   `degreeToMidi`; el resultado siempre pertenece a la escala transportada
   `keyOffset` semitonos; dista a lo sumo ±1 semitono de la nota en tonalidad
-  base (conserva alturas, no transpone); la cromática nunca se altera.
+  base (conserva alturas, no transpone) y la alteración sigue la armadura:
+  sube (+1) en el lado sostenido del viaje (`keyOffset` ∈ {2, 4, 7, 9}), baja
+  (−1) en el bemol ({3, 5, 8, 10}); en escalas de 7 notas los grados nunca
+  colapsan en la misma altura tras modular; la cromática nunca se altera.
 
 **Energía** (`Energy.balance`, corre dentro de `compose` tras humanizar y antes
 del contrapunto):
