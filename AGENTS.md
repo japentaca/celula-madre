@@ -27,7 +27,8 @@ Ocho módulos IIFE que exponen un objeto global cada uno. El orden de carga en
 
 | Módulo | Global | Responsabilidad |
 |---|---|---|
-| `js/audio.js` | `AudioEngine` | Grafo de audio Tone.js: presets de sintes, una instancia por pista, envíos a reverb/delay, paneo, master. Se puede deshabilitar desde el topbar (checkbox Audio) sin parar el Transport. |
+| `js/audio.js` | `AudioEngine` | Grafo de audio Tone.js: presets de sintes (nombre de fábrica o definición `{ base, params, chain }`), una instancia por pista, cadena de efectos de inserción por pista (sinte→fx→panner), envíos a reverb/delay, paneo, master. Se puede deshabilitar desde el topbar (checkbox Audio) sin parar el Transport. |
+| `js/syntheditor.js` | `SynthEditor` | Editor modal por pista: esquemas declarativos de parámetros por tipo de sinte, cadena de efectos (catálogo curado, reordenable), edición en vivo vía `AudioEngine`, presets de usuario en localStorage (`binario.userPresets`, id `user:Nombre`) con export/import JSON. Comunica cambios a `App` por callbacks (`trackSettings.edited`). |
 | `js/midi.js` | `MidiEngine` | Salida Web MIDI hacia VSTs/hardware: puerto global (topbar), canal 1-16 por pista (strip), note-on/off con timestamps en dominio `performance.now()`, y al parar `clear()` + note-off explícito por nota activa + CC 123/120 (muchos VSTs ignoran los CCs de modo). Sin puerto seleccionado no hace nada. |
 | `js/visualizer.js` | `Visualizer` | Piano roll en canvas (offscreen + blit), cursor con autoscroll, colores por motivo. |
 | `js/generator.js` | `Generator` | Material musical: célula madre con contorno orgánico, variaciones (invertir, rotar, retrogradar…), formas, escalas, grados→MIDI. |
@@ -121,6 +122,9 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
 - Los ajustes por pista (`state.trackSettings` en `app.js`) **persisten entre
   generaciones**; los presets sorteados se conservan hasta que el usuario
   re-elige "Aleatorio".
+- La edición en vivo del editor de sintes vive en `trackSettings.edited`
+  (definición completa) y tiene prioridad sobre `preset` al configurar el
+  motor; elegir cualquier preset en el selector de la pista la descarta.
 - Commits en inglés, formato `Tipo: descripción` (ver `git log`).
 
 ## Extensiones frecuentes

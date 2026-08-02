@@ -7,7 +7,13 @@ const App = (() => {
     resolvedPresets: []
   };
 
-  const DEFAULT_TRACK_SETTINGS = { preset: 'random', volume: 0.8, reverb: 0.2, delay: 0, pan: 0, panTouched: false };
+  // edited: definición { base, params, chain } del editor de sintes; tiene
+  // prioridad sobre preset al configurar el motor y persiste entre generaciones
+  const DEFAULT_TRACK_SETTINGS = { preset: 'random', volume: 0.8, reverb: 0.2, delay: 0, pan: 0, panTouched: false, edited: null };
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
 
   function setupMidi() {
     const select = document.getElementById('select-midi-out');
@@ -229,6 +235,24 @@ const App = (() => {
     return state.resolvedPresets[trackIndex] || Generator.pickRandom(AudioEngine.PRESETS);
   }
 
+  // Forma que entiende AudioEngine: definición editada > preset de usuario > nombre de fábrica
+  function toEnginePreset(trackIndex, name) {
+    const settings = state.trackSettings[trackIndex];
+    if (settings.edited) return settings.edited;
+    if (name.startsWith(SynthEditor.USER_PREFIX)) return SynthEditor.getUserPreset(name) || name;
+    return name;
+  }
+
+  function displayName(name) {
+    return name.startsWith(SynthEditor.USER_PREFIX)
+      ? `★ ${name.slice(SynthEditor.USER_PREFIX.length)}`
+      : name;
+  }
+
+  function currentNumTracks() {
+    return state.piece ? state.piece.numTracks : getUIState().numTracks;
+  }
+
   function generate() {
     if (Composer.getIsPlaying()) stop();
 
@@ -254,7 +278,7 @@ const App = (() => {
       // el reparto estéreo se recalcula salvo que el usuario haya movido el paneo a mano
       if (!settings.panTouched) settings.pan = spreadPan(t, ui.numTracks);
       resolved.push(preset);
-      configs.push({ preset, volume: settings.volume, reverb: settings.reverb, delay: settings.delay, pan: settings.pan });
+      configs.push({ preset: toEnginePreset(t, preset), volume: settings.volume, reverb: settings.reverb, delay: settings.delay, pan: settings.pan });
     }
     state.resolvedPresets = resolved;
     AudioEngine.setupTracks(configs);
@@ -276,11 +300,12 @@ const App = (() => {
 
     Visualizer.renderPiece(state.piece);
     buildTrackPanel(ui.numTracks);
+    SynthEditor.ensureValid(ui.numTracks);
   }
 
   function randomOptionLabel(trackIndex) {
     const resolved = state.resolvedPresets[trackIndex];
-    return resolved ? `Aleatorio (${resolved})` : 'Aleatorio';
+    return resolved ? `Aleatorio (${displayName(resolved)})` : 'Aleatorio';
   }
 
   function buildTrackPanel(numTracks) {
@@ -290,10 +315,11 @@ const App = (() => {
     let html = '<div class="panel-spacer">Pistas</div>';
     for (let t = 0; t < numTracks; t++) {
       const settings = state.trackSettings[t];
-      const options = ['random'].concat(AudioEngine.PRESETS).map(p => {
-        const label = p === 'random' ? randomOptionLabel(t) : p;
+      const userIds = SynthEditor.getUserPresetNames().map(n => SynthEditor.USER_PREFIX + n);
+      const options = ['random'].concat(AudioEngine.PRESETS, userIds).map(p => {
+        const label = p === 'random' ? randomOptionLabel(t) : displayName(p);
         const selected = settings.preset === p ? ' selected' : '';
-        return `<option value="${p}"${selected}>${label}</option>`;
+        return `<option value="${escapeHtml(p)}"${selected}>${escapeHtml(label)}</option>`;
       }).join('');
       const chanOptions = Array.from({ length: 16 }, (_, i) => {
         const selected = settings.midiChannel === i + 1 ? ' selected' : '';
@@ -304,6 +330,7 @@ const App = (() => {
           <div class="strip-row">
             <span class="strip-label">T${t + 1}</span>
             <select class="strip-preset">${options}</select>
+            <button class="strip-edit" title="Editor de sinte y efectos">✎</button>
             <span class="mini-label" title="Canal MIDI de la pista">C</span>
             <select class="strip-chan">${chanOptions}</select>
             <span class="mini-label" title="Paneo (izquierda-derecha)">P</span>
@@ -328,12 +355,21 @@ const App = (() => {
       const presetSelect = strip.querySelector('.strip-preset');
       presetSelect.addEventListener('change', () => {
         settings.preset = presetSelect.value;
+        // elegir un preset descarta la edición en vivo del editor de sintes
+        settings.edited = null;
         const resolved = settings.preset === 'random'
           ? Generator.pickRandom(AudioEngine.PRESETS)
           : settings.preset;
         state.resolvedPresets[t] = resolved;
         presetSelect.querySelector('option[value="random"]').textContent = randomOptionLabel(t);
-        AudioEngine.setTrackPreset(t, resolved);
+        // definición completa: cambiar de preset también reemplaza la cadena de efectos
+        const def = resolved.startsWith(SynthEditor.USER_PREFIX) ? SynthEditor.getUserPreset(resolved) : null;
+        AudioEngine.setTrackPreset(t, def || { base: resolved, chain: [] });
+        SynthEditor.refreshIfOpen(t, resolved);
+      });
+
+      strip.querySelector('.strip-edit').addEventListener('click', () => {
+        SynthEditor.open(t, state.resolvedPresets[t] || 'Synth', settings.edited);
       });
 
       strip.querySelector('.strip-vol').addEventListener('input', e => {
@@ -385,8 +421,36 @@ const App = (() => {
     Visualizer.clearCursor();
   }
 
+  function setupSynthEditor() {
+    SynthEditor.init({
+      onChange: (t, def) => {
+        ensureTrackSettings(t + 1);
+        state.trackSettings[t].edited = def;
+      },
+      onPresetsChanged: () => {
+        // limpia elecciones que apunten a presets de usuario borrados
+        const valid = new Set(SynthEditor.getUserPresetNames().map(n => SynthEditor.USER_PREFIX + n));
+        state.trackSettings.forEach((settings, i) => {
+          if (settings.preset.startsWith(SynthEditor.USER_PREFIX) && !valid.has(settings.preset)) {
+            settings.preset = 'random';
+            state.resolvedPresets[i] = null;
+          }
+        });
+        buildTrackPanel(currentNumTracks());
+      },
+      onPresetSaved: (t, name) => {
+        const settings = state.trackSettings[t];
+        settings.preset = SynthEditor.USER_PREFIX + name;
+        settings.edited = null;
+        state.resolvedPresets[t] = settings.preset;
+        buildTrackPanel(currentNumTracks());
+      }
+    });
+  }
+
   function init() {
     setupUI();
+    setupSynthEditor();
     updateLabels();
     Visualizer.init('grid-canvas');
     generate();

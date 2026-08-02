@@ -45,6 +45,33 @@ const AudioEngine = (() => {
   // de ~0.13; sin esto hay hasta 16 dB de diferencia entre presets
   const PRESET_TRIMS = { Synth: -3, FMSynth: 7, AMSynth: 13, MonoSynth: 0, SynthPair: -1.5 };
 
+  // Catálogo de efectos de inserción por pista (cadena sinte→fx→panner).
+  // Los nombres deben coincidir con FX_SCHEMAS de syntheditor.js
+  const EFFECTS = {
+    Filter: opts => new Tone.Filter(opts),
+    AutoFilter: opts => new Tone.AutoFilter(opts),
+    Chorus: opts => new Tone.Chorus(opts),
+    Phaser: opts => new Tone.Phaser(opts),
+    Tremolo: opts => new Tone.Tremolo(opts),
+    Vibrato: opts => new Tone.Vibrato(opts),
+    Distortion: opts => new Tone.Distortion(opts),
+    BitCrusher: opts => new Tone.BitCrusher(opts)
+  };
+
+  function makeEffect(spec) {
+    const factory = EFFECTS[spec.type];
+    if (!factory) return null;
+    const node = factory(spec.params || {});
+    // AutoFilter, Chorus y Tremolo llevan un LFO que hay que arrancar a mano
+    if (typeof node.start === 'function') node.start();
+    return node;
+  }
+
+  function buildChain(preset) {
+    if (typeof preset !== 'object' || !preset.chain) return [];
+    return preset.chain.map(makeEffect).filter(Boolean);
+  }
+
   function ensureGraph() {
     if (masterGain) return;
     // Limitador al final de la cadena: con varias pistas sumándose (sobre todo
@@ -69,22 +96,46 @@ const AudioEngine = (() => {
     }
   }
 
-  function makeSynth(name) {
-    const factory = PRESETS[name] || PRESETS.Synth;
+  // preset: nombre de fábrica o definición { base, params, chain } (preset de
+  // usuario o edición en vivo del editor de sintes)
+  function makeSynth(preset) {
+    const def = typeof preset === 'string' ? { base: preset } : preset;
+    const factory = PRESETS[def.base] || PRESETS.Synth;
     const synth = factory();
-    const trim = PRESET_TRIMS[PRESETS[name] ? name : 'Synth'];
-    if (trim) synth.volume.value = trim;
+    const params = def.params ? { ...def.params } : null;
+    // volume siempre directo al nodo de salida: en PolySynth set() lo repartiría
+    // a las voces y dejaría intacta la salida, que es donde vive el trim
+    if (params && params.volume !== undefined) {
+      synth.volume.value = params.volume;
+      delete params.volume;
+    } else {
+      const trim = PRESET_TRIMS[PRESETS[def.base] ? def.base : 'Synth'];
+      if (trim) synth.volume.value = trim;
+    }
+    if (params && Object.keys(params).length) synth.set(params);
     return synth;
   }
 
-  // El paneo va antes del canal y de los envíos para que reverb y delay
-  // conserven la posición estéreo de la pista
-  function connectSynth(track) {
-    track.synth.connect(track.panner);
+  // Conecta sinte→cadena de inserción→panner; el paneo va antes del canal y de
+  // los envíos para que reverb y delay conserven la posición estéreo de la pista
+  function wireTrack(track) {
+    try { track.synth.disconnect(); } catch (e) { /* ignore */ }
+    for (const node of track.chain) {
+      try { node.disconnect(); } catch (e) { /* ignore */ }
+    }
+    let prev = track.synth;
+    for (const node of track.chain) {
+      prev.connect(node);
+      prev = node;
+    }
+    prev.connect(track.panner);
   }
 
   function disposeTrack(track) {
     try { track.synth.dispose(); } catch (e) { /* ignore */ }
+    for (const node of track.chain) {
+      try { node.dispose(); } catch (e) { /* ignore */ }
+    }
     try { track.panner.dispose(); } catch (e) { /* ignore */ }
     try { track.channel.dispose(); } catch (e) { /* ignore */ }
     try { track.revSend.dispose(); } catch (e) { /* ignore */ }
@@ -107,19 +158,63 @@ const AudioEngine = (() => {
       panner.connect(channel);
       panner.connect(revSend);
       panner.connect(delSend);
-      const track = { synth: makeSynth(cfg.preset), presetName: cfg.preset, panner, channel, revSend, delSend };
-      connectSynth(track);
+      const track = {
+        synth: makeSynth(cfg.preset),
+        presetName: typeof cfg.preset === 'string' ? cfg.preset : cfg.preset.base,
+        chain: buildChain(cfg.preset),
+        panner, channel, revSend, delSend
+      };
+      wireTrack(track);
       return track;
     });
   }
 
-  function setTrackPreset(index, name) {
+  function setTrackPreset(index, preset) {
     const track = tracks[index];
     if (!track) return;
     try { track.synth.dispose(); } catch (e) { /* ignore */ }
-    track.synth = makeSynth(name);
-    track.presetName = name;
-    connectSynth(track);
+    track.synth = makeSynth(preset);
+    track.presetName = typeof preset === 'string' ? preset : preset.base;
+    // una definición completa reemplaza también la cadena; un nombre la conserva
+    if (typeof preset === 'object' && preset.chain) setTrackChain(index, preset.chain);
+    else wireTrack(track);
+  }
+
+  // Cambios parciales en vivo sobre el sinte de una pista (editor de sintes)
+  function setTrackSynthParams(index, params) {
+    const track = tracks[index];
+    if (!track) return;
+    const rest = { ...params };
+    if (rest.volume !== undefined) {
+      track.synth.volume.value = rest.volume;
+      delete rest.volume;
+    }
+    if (Object.keys(rest).length) track.synth.set(rest);
+  }
+
+  function getTrackSynthParams(index) {
+    const track = tracks[index];
+    if (!track) return null;
+    let params = {};
+    try { params = track.synth.get(); } catch (e) { /* algunos sintes pueden fallar en get() */ }
+    return { ...params, volume: track.synth.volume.value };
+  }
+
+  // Reemplaza la cadena de inserción completa (añadir/quitar/reordenar recrea
+  // los nodos; los parámetros vienen en el spec, así que no se pierde estado)
+  function setTrackChain(index, chainSpec) {
+    const track = tracks[index];
+    if (!track) return;
+    for (const node of track.chain) {
+      try { node.dispose(); } catch (e) { /* ignore */ }
+    }
+    track.chain = (chainSpec || []).map(makeEffect).filter(Boolean);
+    wireTrack(track);
+  }
+
+  function setTrackEffectParams(index, fxIndex, params) {
+    const node = tracks[index] && tracks[index].chain[fxIndex];
+    if (node) node.set(params);
   }
 
   function setTrackVolume(index, value) {
@@ -201,6 +296,10 @@ const AudioEngine = (() => {
     init,
     setupTracks,
     setTrackPreset,
+    setTrackSynthParams,
+    getTrackSynthParams,
+    setTrackChain,
+    setTrackEffectParams,
     setTrackVolume,
     setTrackReverb,
     setTrackDelay,

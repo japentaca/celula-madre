@@ -330,6 +330,201 @@ body {
   flex-shrink: 0;
 }
 
+.track-strip .strip-edit {
+  flex: 0 0 auto;
+  background: #16213e;
+  color: #8888aa;
+  border: 1px solid #2a2a4e;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 10px;
+  padding: 0 4px;
+}
+
+.track-strip .strip-edit:hover {
+  color: #e0e0e0;
+  background: #2a2a4e;
+}
+
+/* Editor de sinte y efectos: modal centrado (popover manual: sin light-dismiss
+   para poder tocar el resto de la UI mientras se edita; cierre con ✕ o Esc) */
+#synth-editor {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(680px, calc(100vw - 32px));
+  height: min(580px, calc(100vh - 48px));
+  padding: 0;
+  background: #16213e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4e;
+  border-radius: 6px;
+  font-family: monospace;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
+}
+
+#synth-editor:popover-open {
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+}
+
+.editor-col {
+  overflow-y: auto;
+  padding: 10px 12px;
+}
+
+.editor-col + .editor-col {
+  border-left: 1px solid #2a2a4e;
+}
+
+.editor-section {
+  color: #6c63ff;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 10px 0 6px;
+}
+
+.editor-row {
+  display: grid;
+  grid-template-columns: 76px 1fr 52px;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.editor-row label {
+  color: #8888aa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-row input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  height: 12px;
+  accent-color: #6c63ff;
+}
+
+.editor-row select {
+  background: #10182e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4e;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-family: monospace;
+  min-width: 0;
+}
+
+.editor-val {
+  text-align: right;
+  font-size: 10px;
+}
+
+.fx-add-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.fx-add-row select {
+  flex: 1;
+  background: #10182e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4e;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+.fx-add-row button,
+.editor-footer button {
+  background: #16213e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4e;
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: monospace;
+  cursor: pointer;
+}
+
+.fx-add-row button:hover,
+.editor-footer button:hover:not(:disabled) {
+  background: #2a2a4e;
+}
+
+.editor-footer button:disabled {
+  color: #555;
+  cursor: default;
+}
+
+.fx-item {
+  border: 1px solid #2a2a4e;
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  background: #10182e;
+}
+
+.fx-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.fx-head button {
+  background: none;
+  border: none;
+  color: #8888aa;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 0 3px;
+}
+
+.fx-head button:hover:not(:disabled) {
+  color: #e0e0e0;
+}
+
+.fx-head button:disabled {
+  color: #444;
+  cursor: default;
+}
+
+.editor-footer {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 12px;
+  border-top: 1px solid #2a2a4e;
+}
+
+#se-name {
+  flex: 1;
+  min-width: 0;
+  background: #10182e;
+  border: 1px solid #2a2a4e;
+  border-radius: 3px;
+  color: #e0e0e0;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 3px 6px;
+}
+
 /* Tira alta (pocas pistas): los controles se despliegan, cada slider en su
    propia línea a lo ancho; por debajo del umbral rige el modo compacto */
 @container (min-height: 88px) {
