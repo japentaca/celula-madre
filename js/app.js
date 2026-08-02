@@ -462,7 +462,7 @@ const App = (() => {
     state.piece.contour = motherCell.contour;
     const extraContours = [...new Set(motifs.slice(1).map(m => m.contour).filter(c => c !== motherCell.contour))];
     const contourInfo = extraContours.length ? `${motherCell.contour} (variaciones: ${extraContours.join(', ')})` : motherCell.contour;
-    console.log(`Pieza generada — contorno: ${contourInfo}, forma: ${formStr}, quinta cada ${fifthSteps} repeticiones`);
+    console.log(`Pieza generada — contorno: ${contourInfo}, forma: ${formStr}, quinta cada ${fifthSteps} semicorcheas`);
 
     vizRender();
     buildTrackPanel(ui.numTracks);

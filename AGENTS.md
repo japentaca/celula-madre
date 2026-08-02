@@ -67,13 +67,14 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
 - **Pieza** (`Composer.compose`): `{ sections, totalSteps, grid, stepEvents,
   blockMarkers, numTracks, cellLength, scale, key, fifthSteps, contour }`.
   `grid[pista][paso]` para el visualizador; `stepEvents[paso]` para el transporte.
-- **Modulación por quintas**: cada `fifthSteps` (4/8/16) repeticiones de célula
-  acumuladas (siempre una frontera de sección) el viaje por el ciclo de quintas
-  da un paso aleatorio de ±1 quinta (+7/−7 semitonos), hacia adelante o hacia
-  atrás, rebotando en el borde. El viaje está **acotado a ±4 pasos** desde la
+- **Modulación por quintas**: cada `fifthSteps` (2/4/8/16/32) **semicorcheas**
+  (pasos del grid, la unidad de tiempo real de la pieza) desde el inicio, el
+  viaje por el ciclo de quintas da un paso aleatorio de ±1 quinta (+7/−7
+  semitonos), hacia adelante o hacia atrás, rebotando en el borde. Es
+  independiente del tamaño de célula y de las repeticiones: el cambio puede caer
+  en medio de una sección. El viaje está **acotado a ±4 pasos** desde la
   tonalidad base (`MAX_FIFTH_STEPS` en `composer.js`); los `keyOffset` posibles
-  son {0, 2, 3, 4, 5, 7, 8, 9, 10} (mod 12). Cada sección guarda su `keyOffset`,
-  constante dentro de ella; cada nota de `grid` y
+  son {0, 2, 3, 4, 5, 7, 8, 9, 10} (mod 12). Cada nota de `grid` y
   `stepEvents` lo copia para que `retune` pueda re-mapear sin perderlo. La
   modulación es **suave** (`Generator.degreeToMidiInKey`): la nota se calcula en
   la tonalidad base y solo se altera ±1 semitono si no pertenece a la escala
@@ -83,7 +84,7 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
 
 1. **Potencias de 2 en todas partes**: largos de célula, repeticiones de sección,
    particiones de bloques (`partitionRepeats` bisecciona), pasos de quintas
-   (4/8/16). El algoritmo `fractal` y `subsequence` dependen de esto.
+   (2/4/8/16/32). El algoritmo `fractal` y `subsequence` dependen de esto.
 2. **Dos pistas nunca tocan el mismo motivo a la vez** dentro de una sección
    (`slotUsage` en `composer.js`). Antes que duplicar, una pista calla.
 3. **`degree` siempre entero en [-7, 7]** al salir del generador; los contornos
@@ -108,6 +109,13 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
    `Humanizer` añade o altera escribe `degree`/`keyOffset` y deriva `midi` de
    ellos, para que `retune` siga funcionando. Conserva el `motifIndex` del
    bloque (invariante 2) y corre antes del cálculo de duraciones (invariante 5).
+   Las notas insertadas (mordentes, notas de paso) copian el `keyOffset` de su
+   nota ancla: si el adorno cae junto a un límite de tramo de `fifthSteps`
+   pasos puede llevar el `keyOffset` del tramo vecino — es deliberado (el
+   adorno decora su contexto armónico inmediato) y no rompe la equivalencia
+   `midi === degreeToMidiInKey(...)`; solo significa que la caminata de
+   quintas no se puede reconstruir de la pieza final, ver skill
+   `test-generator`.
 10. **El contrapunto es determinista y acotado**: `Counterpoint.enforce` no usa
    azar (misma entrada → mismas correcciones, así la recapitulación sigue
    literal), no añade, quita ni desplaza notas en el tiempo (los huecos entre

@@ -137,25 +137,26 @@ const Composer = (() => {
     const stepEvents = Array.from({ length: totalSteps }, () => []);
     const blockMarkers = [];
 
-    // Modulación: cada fifthSteps repeticiones de célula acumuladas (siempre una
-    // frontera de sección) el viaje por el ciclo de quintas da un paso aleatorio
-    // de ±1 quinta (+7/-7 semitonos), hacia adelante o hacia atrás. El viaje se
-    // limita a ±MAX_FIFTH_STEPS pasos desde la tonalidad base (ni se aleja
-    // demasiado hacia las sostenidas ni hacia las bemoles), rebotando en el
-    // borde. Es una modulación suave: las alturas se conservan y solo se alteran
-    // las notas ajenas a la tonalidad nueva (ver degreeToMidiInKey)
+    // Modulación por unidades de tiempo: cada fifthSteps semicorcheas (pasos del
+    // grid) desde el inicio de la pieza el viaje por el ciclo de quintas da un
+    // paso aleatorio de ±1 quinta (+7/-7 semitonos), hacia adelante o hacia
+    // atrás. Es independiente del tamaño de célula y de las repeticiones, y el
+    // cambio puede caer en medio de una sección. El viaje se limita a
+    // ±MAX_FIFTH_STEPS pasos desde la tonalidad base, rebotando en el borde.
+    // Cada nota guarda el keyOffset de su tramo (constante por cada fifthSteps
+    // pasos), lo que hace retune-safe la modulación. Es una modulación suave:
+    // las alturas se conservan y solo se alteran las notas ajenas a la tonalidad
+    // nueva (ver degreeToMidiInKey)
+    const maxTick = fifthSteps ? Math.floor(totalSteps / fifthSteps) + 1 : 0;
+    const walk = new Array(maxTick + 1).fill(0);
+    for (let i = 1; i <= maxTick; i++) {
+      walk[i] = Math.max(-MAX_FIFTH_STEPS, Math.min(MAX_FIFTH_STEPS, walk[i - 1] + Generator.pickRandom([-1, 1])));
+    }
+    const keyOffsetForStep = fifthSteps
+      ? step => ((walk[Math.floor(step / fifthSteps)] * 7) % 12 + 12) % 12
+      : () => 0;
     let pos = 0;
-    let cumRepeats = 0;
-    let fifthStep = 0;
-    let prevCadence = 0;
     for (const section of sections) {
-      const cadence = fifthSteps ? Math.floor(cumRepeats / fifthSteps) : 0;
-      if (cadence > prevCadence) {
-        fifthStep += Generator.pickRandom([-1, 1]);
-        fifthStep = Math.max(-MAX_FIFTH_STEPS, Math.min(MAX_FIFTH_STEPS, fifthStep));
-        prevCadence = cadence;
-      }
-      section.keyOffset = ((fifthStep * 7) % 12 + 12) % 12;
       const sectionSteps = cellLength * section.totalRepeats;
       for (let t = 0; t < numTracks; t++) {
         const blocks = section.trackBlocks[t];
@@ -168,11 +169,12 @@ const Composer = (() => {
             for (let s = 0; s < blockSteps; s++) {
               const step = motif[s % motif.length];
               if (!step.note) continue;
-              const midi = Generator.degreeToMidiInKey(step.degree, scale, key, section.keyOffset);
+              const keyOffset = keyOffsetForStep(blockPos + s);
+              const midi = Generator.degreeToMidiInKey(step.degree, scale, key, keyOffset);
               grid[t][blockPos + s] = {
                 midi,
                 degree: step.degree,
-                keyOffset: section.keyOffset,
+                keyOffset,
                 velocity: step.velocity,
                 sustain: step.sustain,
                 motifIndex: block.motifIndex
@@ -191,7 +193,6 @@ const Composer = (() => {
       section.startStep = pos;
       section.lengthSteps = sectionSteps;
       pos += sectionSteps;
-      cumRepeats += section.totalRepeats;
     }
 
     // Humanización: retoca notas, dinámica y articulación trabajando en grados;

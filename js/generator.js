@@ -10,9 +10,11 @@ const Generator = (() => {
 
   const CELL_LENGTHS = [16, 32, 64, 128, 256];
 
-  // Cada N repeticiones de célula acumuladas la pieza sube una quinta (ciclo de
-  // quintas); potencias de 2: valores bajos modulan a menudo, altos casi nunca
-  const FIFTH_STEPS = [4, 8, 16];
+  // Cada N unidades de tiempo (semicorcheas = pasos del grid) la pieza da un
+  // paso en el ciclo de quintas; potencias de 2: valores bajos modulan a
+  // menudo, altos casi nunca. Independiente del tamaño de célula y de las
+  // repeticiones.
+  const FIFTH_STEPS = [2, 4, 8, 16, 32];
 
   const FORMS = [
     'A-B-A',

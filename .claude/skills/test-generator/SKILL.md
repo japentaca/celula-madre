@@ -54,14 +54,24 @@ tiene distinto al de la madre.
 - `durationSteps >= 1` en toda nota y ninguna nota pisa la siguiente de su pista.
 - Letras de forma repetidas comparten spec (mismo `trackBlocks` por letra, salvo
   la sección de recapitulación).
-- Modulación por quintas: cada `fifthSteps` ∈ {4, 8, 16} repeticiones de célula
-  acumuladas (frontera de sección) el viaje da un paso aleatorio de ±1 quinta;
-  la primera sección está en la tonalidad base y toda sección lleva un
-  `keyOffset` ∈ {0, 2, 3, 4, 5, 7, 8, 9, 10} (mod 12, a lo sumo ±4 quintas desde
-  la base, con cambios de ±7 semitonos entre secciones). Toda nota
-  de `grid`/`stepEvents` copia el `keyOffset` de su sección y su `midi` equivale
-  a `degreeToMidiInKey(degree, scale, key, keyOffset)`. `retune` debe conservar
+- Modulación por quintas: cada `fifthSteps` ∈ {2, 4, 8, 16, 32} **semicorcheas**
+  (pasos del grid) desde el inicio de la pieza el viaje da un paso aleatorio de
+  ±1 quinta; independiente del tamaño de célula y de las repeticiones, el cambio
+  puede caer en medio de una sección. Cada nota lleva un `keyOffset` ∈
+  {0, 2, 3, 4, 5, 7, 8, 9, 10} (mod 12, a lo sumo ±4 quintas desde la base, con
+  cambios de ±7 semitonos entre tramos de `fifthSteps` pasos). Toda nota
+  de `grid`/`stepEvents` lleva su `keyOffset` y su `midi` equivale a
+  `degreeToMidiInKey(degree, scale, key, keyOffset)`. `retune` debe conservar
   esa equivalencia con la nueva escala/tonalidad.
+- Reconstruir la caminata de quintas desde las notas **solo con los pases
+  desactivados** (`globalThis.Humanizer = { humanize(){} }`, ídem
+  `Energy`/`Counterpoint`): los adornos del humanizador copian el `keyOffset`
+  de su ancla y junto a un límite de tramo pueden llevar el del tramo vecino
+  (deliberado, ver invariante 9 de AGENTS.md). Y al comparar tramos, saltarse
+  los vacíos (con `fifthSteps` 2-4 abundan): la invariante correcta entre
+  tramos no vacíos t1 < t2 es `|walk[t2] - walk[t1]| <= t2 - t1`, no "±1
+  entre muestras consecutivas"; si el tramo 0 está vacío, el primer tramo
+  muestreado t puede valer cualquier w con `|w| <= min(t, 4)`, no 0.
 - Modulación suave (`degreeToMidiInKey`): con `keyOffset` 0 es idéntica a
   `degreeToMidi`; el resultado siempre pertenece a la escala transportada
   `keyOffset` semitonos; dista a lo sumo ±1 semitono de la nota en tonalidad
