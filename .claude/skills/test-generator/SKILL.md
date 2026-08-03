@@ -48,30 +48,26 @@ es la madre, todos del mismo largo y con grados en rango. Toda variación lleva
 tiene distinto al de la madre.
 
 **Composición** (`Composer.compose` con opts completos: `numTracks`, `motifs`,
-`formParts`, `cellLength`, `scale`, `key`, `fifthSteps`):
+`formParts`, `cellLength`, `scale`, `key`):
 - `totalSteps === Σ cellLength × totalRepeats` de las secciones.
 - En ningún paso dos pistas tocan el mismo `motifIndex` (invariante central).
 - `durationSteps >= 1` en toda nota y ninguna nota pisa la siguiente de su pista.
 - Letras de forma repetidas comparten spec (mismo `trackBlocks` por letra, salvo
   la sección de recapitulación).
-- Modulación por quintas: cada `fifthSteps` ∈ {4, 8, 16, 32} **semicorcheas**
-  (pasos del grid) desde el inicio de la pieza el viaje da un paso aleatorio de
-  ±1 quinta; independiente del tamaño de célula y de las repeticiones, el cambio
-  puede caer en medio de una sección. Cada nota lleva un `keyOffset` ∈
-  {0, 2, 3, 4, 5, 7, 8, 9, 10} (mod 12, a lo sumo ±4 quintas desde la base, con
-  cambios de ±7 semitonos entre tramos de `fifthSteps` pasos). Toda nota
-  de `grid`/`stepEvents` lleva su `keyOffset` y su `midi` equivale a
+- Plan tonal (modulación por quintas): con S secciones, los
+  `section.fifthOffset` forman un **arco trapezoidal** — `offs[0] === 0`,
+  `offs[S-1] === 0`, `|offs[i] - offs[i-1]| <= 1`, todos del mismo signo (o 0)
+  y `|offs[i]| <= min(4, ⌊(S-1)/2⌋)`; con S ≥ 3 hay al menos una modulación.
+  `section.keyOffset === ((fifthOffset * 7) % 12 + 12) % 12` ∈
+  {0, 2, 3, 4, 5, 7, 8, 9, 10}. Toda nota de `grid`/`stepEvents` lleva su
+  `keyOffset` y su `midi` equivale a
   `degreeToMidiInKey(degree, scale, key, keyOffset)`. `retune` debe conservar
   esa equivalencia con la nueva escala/tonalidad.
-- Reconstruir la caminata de quintas desde las notas **solo con los pases
-  desactivados** (`globalThis.Humanizer = { humanize(){} }`, ídem
-  `Energy`/`Counterpoint`): los adornos del humanizador copian el `keyOffset`
-  de su ancla y junto a un límite de tramo pueden llevar el del tramo vecino
-  (deliberado, ver invariante 9 de AGENTS.md). Y al comparar tramos, saltarse
-  los vacíos (con `fifthSteps` 2-4 abundan): la invariante correcta entre
-  tramos no vacíos t1 < t2 es `|walk[t2] - walk[t1]| <= t2 - t1`, no "±1
-  entre muestras consecutivas"; si el tramo 0 está vacío, el primer tramo
-  muestreado t puede valer cualquier w con `|w| <= min(t, 4)`, no 0.
+- Con los pases desactivados (`globalThis.Humanizer = { humanize(){} }`, ídem
+  `Energy`/`Counterpoint`), toda nota lleva exactamente el `keyOffset` de la
+  sección que la contiene. Con los pases activos, los adornos del humanizador
+  copian el `keyOffset` de su ancla y junto a una frontera de sección pueden
+  llevar el de la sección vecina (deliberado, ver invariante 9 de AGENTS.md).
 - Modulación suave (`degreeToMidiInKey`): con `keyOffset` 0 es idéntica a
   `degreeToMidi`; el resultado siempre pertenece a la escala transportada
   `keyOffset` semitonos; dista a lo sumo ±1 semitono de la nota en tonalidad

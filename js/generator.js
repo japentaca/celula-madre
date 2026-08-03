@@ -10,12 +10,6 @@ const Generator = (() => {
 
   const CELL_LENGTHS = [16, 32, 64];
 
-  // Cada N unidades de tiempo (semicorcheas = pasos del grid) la pieza da un
-  // paso en el ciclo de quintas; potencias de 2: valores bajos modulan a
-  // menudo, altos casi nunca. Independiente del tamaño de célula y de las
-  // repeticiones.
-  const FIFTH_STEPS = [4, 8, 16, 32];
-
   const FORMS = [
     'A-B-A',
     'A-B-C-B-D-D-D-A',
@@ -563,10 +557,6 @@ const Generator = (() => {
     return formStr.split('-');
   }
 
-  function randomFifthSteps() {
-    return pickRandom(FIFTH_STEPS);
-  }
-
   // key en semitonos (0-11); resuelve grado de escala -> MIDI en esa tonalidad,
   // sin considerar modulación (para eso está degreeToMidiInKey)
   function degreeToMidi(degree, scaleName, key, baseOctave) {
@@ -616,7 +606,6 @@ const Generator = (() => {
     generateMotifs,
     generateForm,
     parseForm,
-    randomFifthSteps,
     degreeToMidi,
     degreeToMidiInKey
   };

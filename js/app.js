@@ -427,7 +427,6 @@ const App = (() => {
     ensureTrackSettings(ui.numTracks);
 
     const cellLength = cellLengthFromDuration(ui.duration);
-    const fifthSteps = Generator.randomFifthSteps();
 
     const motherCell = Generator.generateMotherCell(cellLength, ui.contours);
     // al menos tantas variaciones como pistas para que nunca falte material distinto
@@ -456,13 +455,13 @@ const App = (() => {
       formParts,
       cellLength,
       scale: ui.scale,
-      key: ui.key,
-      fifthSteps
+      key: ui.key
     });
     state.piece.contour = motherCell.contour;
     const extraContours = [...new Set(motifs.slice(1).map(m => m.contour).filter(c => c !== motherCell.contour))];
     const contourInfo = extraContours.length ? `${motherCell.contour} (variaciones: ${extraContours.join(', ')})` : motherCell.contour;
-    console.log(`Pieza generada — contorno: ${contourInfo}, forma: ${formStr}, quinta cada ${fifthSteps} semicorcheas`);
+    const tonalPlan = state.piece.sections.map(s => s.fifthOffset).join(' → ');
+    console.log(`Pieza generada — contorno: ${contourInfo}, forma: ${formStr}, plan tonal (quintas): ${tonalPlan}`);
 
     vizRender();
     buildTrackPanel(ui.numTracks);

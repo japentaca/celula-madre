@@ -17,7 +17,9 @@ cargan por CDN.
 2. **Variaciones** — la célula se transforma (invertir, rotar, retrogradar,
    re-contornear…) para producir una familia de motivos emparentados.
 3. **Forma** — los motivos se reparten en secciones (A-A-B-A…) y bloques por
-   pista, con recapitulación y modulación por el círculo de quintas.
+   pista, con recapitulación y un plan tonal en arco por el círculo de
+   quintas: la pieza se aleja de la tónica hasta un clímax y regresa,
+   modulando solo en fronteras de sección.
 4. **Pases de refinamiento** — sobre la pieza compuesta corren tres pases:
    *humanización* (notas de paso, articulación, arcos de dinámica,
    respiraciones), *equilibrio de energía* (poda ataques del fondo con una
@@ -33,8 +35,8 @@ durante la reproducción.
 
 ## Características
 
-- Selección de escala, tonalidad, tempo (en vivo), forma, contornos
-  permitidos y paso de modulación por quintas.
+- Selección de escala, tonalidad, tempo (en vivo), forma y contornos
+  permitidos.
 - Mezclador por pista: preset de sinte, volumen, paneo, envíos a
   reverb/delay, canal MIDI.
 - Editor de sintetizador por pista con cadena de efectos de inserción

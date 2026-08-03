@@ -95,9 +95,9 @@ const Composer = (() => {
     return { totalRepeats, trackBlocks };
   }
 
-  // opts: { numTracks, motifs, formParts, cellLength, scale, key, fifthSteps }
+  // opts: { numTracks, motifs, formParts, cellLength, scale, key }
   function compose(opts) {
-    const { numTracks, motifs, formParts, cellLength, scale, key, fifthSteps } = opts;
+    const { numTracks, motifs, formParts, cellLength, scale, key } = opts;
 
     // Cada letra de la forma comparte spec: "A" suena igual cada vez que aparece
     const specByLetter = {};
@@ -137,24 +137,25 @@ const Composer = (() => {
     const stepEvents = Array.from({ length: totalSteps }, () => []);
     const blockMarkers = [];
 
-    // Modulación por unidades de tiempo: cada fifthSteps semicorcheas (pasos del
-    // grid) desde el inicio de la pieza el viaje por el ciclo de quintas da un
-    // paso aleatorio de ±1 quinta (+7/-7 semitonos), hacia adelante o hacia
-    // atrás. Es independiente del tamaño de célula y de las repeticiones, y el
-    // cambio puede caer en medio de una sección. El viaje se limita a
-    // ±MAX_FIFTH_STEPS pasos desde la tonalidad base, rebotando en el borde.
-    // Cada nota guarda el keyOffset de su tramo (constante por cada fifthSteps
-    // pasos), lo que hace retune-safe la modulación. Es una modulación suave:
-    // las alturas se conservan y solo se alteran las notas ajenas a la tonalidad
-    // nueva (ver degreeToMidiInKey)
-    const maxTick = fifthSteps ? Math.floor(totalSteps / fifthSteps) + 1 : 0;
-    const walk = new Array(maxTick + 1).fill(0);
-    for (let i = 1; i <= maxTick; i++) {
-      walk[i] = Math.max(-MAX_FIFTH_STEPS, Math.min(MAX_FIFTH_STEPS, walk[i - 1] + Generator.pickRandom([-1, 1])));
-    }
-    const keyOffsetForStep = fifthSteps
-      ? step => ((walk[Math.floor(step / fifthSteps)] * 7) % 12 + 12) % 12
-      : () => 0;
+    // Plan tonal: la pieza sigue un arco compuesto de antemano sobre el ciclo
+    // de quintas, en vez de un paseo al azar. Se sortea un sentido por pieza
+    // (bemoles más probable en escalas menores) y una lejanía máxima (peak,
+    // acotada por MAX_FIFTH_STEPS y por el número de secciones); la tonalidad
+    // se aleja una quinta por sección hasta el clímax, se sostiene y regresa,
+    // terminando siempre en la tonalidad base. Las modulaciones solo caen en
+    // fronteras de sección — nunca en medio de un bloque — y cada nota guarda
+    // el keyOffset de su sección, lo que hace retune-safe la modulación. Sigue
+    // siendo suave: las alturas se conservan y solo se alteran las notas ajenas
+    // a la tonalidad del tramo (ver degreeToMidiInKey)
+    const numSections = sections.length;
+    const peakCap = Math.min(MAX_FIFTH_STEPS, Math.floor((numSections - 1) / 2));
+    const peak = peakCap > 0 ? 1 + Math.floor(Math.random() * peakCap) : 0;
+    const flatBias = scale === 'minor' || scale === 'dorian' ? 0.7 : 0.3;
+    const dir = Math.random() < flatBias ? -1 : 1;
+    sections.forEach((section, i) => {
+      section.fifthOffset = dir * Math.min(i, numSections - 1 - i, peak);
+      section.keyOffset = ((section.fifthOffset * 7) % 12 + 12) % 12;
+    });
     let pos = 0;
     for (const section of sections) {
       const sectionSteps = cellLength * section.totalRepeats;
@@ -169,12 +170,11 @@ const Composer = (() => {
             for (let s = 0; s < blockSteps; s++) {
               const step = motif[s % motif.length];
               if (!step.note) continue;
-              const keyOffset = keyOffsetForStep(blockPos + s);
-              const midi = Generator.degreeToMidiInKey(step.degree, scale, key, keyOffset);
+              const midi = Generator.degreeToMidiInKey(step.degree, scale, key, section.keyOffset);
               grid[t][blockPos + s] = {
                 midi,
                 degree: step.degree,
-                keyOffset,
+                keyOffset: section.keyOffset,
                 velocity: step.velocity,
                 sustain: step.sustain,
                 motifIndex: block.motifIndex
@@ -235,7 +235,7 @@ const Composer = (() => {
       }
     }
 
-    piece = { sections, totalSteps, grid, stepEvents, blockMarkers, numTracks, cellLength, scale, key, fifthSteps };
+    piece = { sections, totalSteps, grid, stepEvents, blockMarkers, numTracks, cellLength, scale, key };
     // Una pieza nueva invalida cualquier pausa pendiente de la anterior
     currentStep = 0;
     return piece;

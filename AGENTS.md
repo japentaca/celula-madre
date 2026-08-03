@@ -65,28 +65,31 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
   nombre, lista o nada); sin ninguno marcado se sortea entre todos, y con uno
   solo las variaciones nunca cambian de algoritmo.
 - **Pieza** (`Composer.compose`): `{ sections, totalSteps, grid, stepEvents,
-  blockMarkers, numTracks, cellLength, scale, key, fifthSteps, contour }`.
+  blockMarkers, numTracks, cellLength, scale, key, contour }`.
   `grid[pista][paso]` para el visualizador; `stepEvents[paso]` para el transporte.
-- **Modulación por quintas**: cada `fifthSteps` (4/8/16/32) **semicorcheas**
-  (pasos del grid, la unidad de tiempo real de la pieza) desde el inicio, el
-  viaje por el ciclo de quintas da un paso aleatorio de ±1 quinta (+7/−7
-  semitonos), hacia adelante o hacia atrás, rebotando en el borde. Es
-  independiente del tamaño de célula y de las repeticiones: el cambio puede caer
-  en medio de una sección. El viaje está **acotado a ±4 pasos** desde la
-  tonalidad base (`MAX_FIFTH_STEPS` en `composer.js`); los `keyOffset` posibles
-  son {0, 2, 3, 4, 5, 7, 8, 9, 10} (mod 12). Cada nota de `grid` y
-  `stepEvents` lo copia para que `retune` pueda re-mapear sin perderlo. La
-  modulación es **suave** (`Generator.degreeToMidiInKey`): la nota se calcula en
-  la tonalidad base y solo se altera ±1 semitono si no pertenece a la escala
-  transportada, siguiendo la armadura — sube hacia el lado de los sostenidos,
-  baja hacia el de los bemoles, con lo que dos grados nunca colapsan en la
-  misma altura — conserva alturas, no transpone; la cromática es insensible.
+- **Plan tonal (modulación por quintas)**: la pieza sigue un **arco compuesto
+  de antemano** sobre el ciclo de quintas, calculado en `compose` a partir de
+  la forma. Se sortea un sentido por pieza (bemoles más probable en escalas
+  menor y dórica, sostenidos en las demás) y una lejanía máxima `peak` en
+  [1, min(4, ⌊(S−1)/2⌋)] con S secciones; el desplazamiento de la sección i es
+  `dir × min(i, S−1−i, peak)` quintas: sale de la tónica, se aleja una quinta
+  por sección hasta el clímax, se sostiene y regresa, **terminando siempre en
+  la tonalidad base**. Las modulaciones solo caen en **fronteras de sección**,
+  nunca en medio de un bloque. Cada sección guarda `fifthOffset` (quintas con
+  signo) y `keyOffset` (semitonos mod 12, posibles {0, 2, 3, 4, 5, 7, 8, 9,
+  10}); cada nota de `grid` y `stepEvents` copia el `keyOffset` de su sección
+  para que `retune` pueda re-mapear sin perderlo. La modulación es **suave**
+  (`Generator.degreeToMidiInKey`): la nota se calcula en la tonalidad base y
+  solo se altera ±1 semitono si no pertenece a la escala transportada,
+  siguiendo la armadura — sube hacia el lado de los sostenidos, baja hacia el
+  de los bemoles, con lo que dos grados nunca colapsan en la misma altura —
+  conserva alturas, no transpone; la cromática es insensible.
 
 ## Invariantes (no romper)
 
 1. **Potencias de 2 en todas partes**: largos de célula, repeticiones de sección,
-   particiones de bloques (`partitionRepeats` bisecciona), pasos de quintas
-   (4/8/16/32). El algoritmo `fractal` y `subsequence` dependen de esto.
+   particiones de bloques (`partitionRepeats` bisecciona). El algoritmo
+   `fractal` y `subsequence` dependen de esto.
 2. **Dos pistas nunca tocan el mismo motivo a la vez** dentro de una sección
    (`slotUsage` en `composer.js`). Antes que duplicar, una pista calla.
 3. **`degree` siempre entero en [-7, 7]** al salir del generador; los contornos
@@ -112,12 +115,11 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
    ellos, para que `retune` siga funcionando. Conserva el `motifIndex` del
    bloque (invariante 2) y corre antes del cálculo de duraciones (invariante 5).
    Las notas insertadas (mordentes, notas de paso) copian el `keyOffset` de su
-   nota ancla: si el adorno cae junto a un límite de tramo de `fifthSteps`
-   pasos puede llevar el `keyOffset` del tramo vecino — es deliberado (el
-   adorno decora su contexto armónico inmediato) y no rompe la equivalencia
-   `midi === degreeToMidiInKey(...)`; solo significa que la caminata de
-   quintas no se puede reconstruir de la pieza final, ver skill
-   `test-generator`.
+   nota ancla: si el adorno cae junto a una frontera de sección puede llevar el
+   `keyOffset` de la sección vecina — es deliberado (el adorno decora su
+   contexto armónico inmediato) y no rompe la equivalencia
+   `midi === degreeToMidiInKey(...)`; el plan tonal de referencia vive en
+   `section.fifthOffset`, no hace falta reconstruirlo de las notas.
 10. **El contrapunto es determinista y acotado**: `Counterpoint.enforce` no usa
    azar (misma entrada → mismas correcciones, así la recapitulación sigue
    literal), no añade, quita ni desplaza notas en el tiempo (los huecos entre
