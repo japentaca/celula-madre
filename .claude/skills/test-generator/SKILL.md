@@ -40,7 +40,11 @@ Notas:
 - Cada paso: `degree` entero en [-7, 7], `velocity` en [0.15, 1], `note` booleano,
   `sustain` continuo en [0.25, 1] (onda lenta de legato: media ~0.7 y rachas de
   pasos contiguos ligados, no ruido por nota).
-- Densidad de notas razonable (proporción de `note:true` ~0.3–0.5 de media).
+- Densidad de notas razonable (proporción de `note:true` ~0.25–0.45 de media;
+  el ritmo va por valores de nota, así que es menor que con sorteo por paso).
+- Huecos entre ataques variados: fracción de huecos de 1 paso < 0.55 y de
+  huecos ≥3 pasos > 0.25 (el ritmo por `NOTE_VALUES` debe producir valores
+  largos, no solo semicorcheas).
 
 **Variaciones**: `generateMotifs(madre, n)` devuelve `n+1` motivos, `motifs[0]`
 es la madre, todos del mismo largo y con grados en rango. Toda variación lleva

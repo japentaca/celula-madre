@@ -417,6 +417,28 @@ const Generator = (() => {
     });
   }
 
+  // Valores rítmicos en pasos de semicorchea (16n, 8n, 8n·, 4n, 4n·, 2n) con
+  // dos tablas de pesos — frase activa y frase en reposo — que se interpolan
+  // con la onda de respiración: activa pesa lo corto, en reposo lo largo
+  const NOTE_VALUES = [1, 2, 3, 4, 6, 8];
+  const NOTE_VALUE_WEIGHTS_ACTIVE = [3.5, 3, 1.4, 0.7, 0.2, 0.1];
+  const NOTE_VALUE_WEIGHTS_CALM = [0.5, 1.5, 1.5, 3, 2, 1.5];
+
+  function pickNoteValue(breath) {
+    let total = 0;
+    const weights = NOTE_VALUES.map((v, i) => {
+      const w = NOTE_VALUE_WEIGHTS_ACTIVE[i] * breath + NOTE_VALUE_WEIGHTS_CALM[i] * (1 - breath);
+      total += w;
+      return w;
+    });
+    let r = Math.random() * total;
+    for (let i = 0; i < weights.length; i++) {
+      r -= weights[i];
+      if (r <= 0) return NOTE_VALUES[i];
+    }
+    return NOTE_VALUES[NOTE_VALUES.length - 1];
+  }
+
   // Cada paso: { note: on/off, degree: grado de escala (entero, octava por división),
   //              velocity: 0..1, sustain: fracción de duración }.
   // El grado se convierte a MIDI recién en degreeToMidi().
@@ -436,13 +458,23 @@ const Generator = (() => {
     const legatoCycles = pickRandom([1, 2, 3]);
     const legatoPhase = Math.random() * Math.PI * 2;
     const legatoBase = 0.2 + Math.random() * 0.3;
+    // El ritmo avanza por valores de nota en vez de sortear cada paso: cada
+    // ataque (o silencio) ocupa un valor rítmico entero, así los huecos varían
+    // y la duración final (sustain × hueco) da notas tenidas, no solo
+    // semicorcheas picadas
     const cell = [];
+    let nextOnset = 0;
     for (let i = 0; i < actualLength; i++) {
       const breath = 0.5 + 0.5 * Math.sin(breathPhase + (i / actualLength) * Math.PI * 2 * breathCycles);
       const legato = 0.5 + 0.5 * Math.sin(legatoPhase + (i / actualLength) * Math.PI * 2 * legatoCycles);
       const velocity = 0.45 + 0.25 * breath + 0.1 * (degrees[i] / 7) + (Math.random() - 0.5) * 0.2;
+      let note = false;
+      if (i >= nextOnset) {
+        note = Math.random() < 0.65 + 0.32 * breath;
+        nextOnset = i + pickNoteValue(breath);
+      }
       cell.push({
-        note: Math.random() < 0.2 + 0.4 * breath,
+        note,
         degree: degrees[i],
         velocity: Math.max(0.15, Math.min(1, velocity)),
         sustain: clampSustain(legatoBase + 0.7 * legato + (Math.random() - 0.5) * 0.2)

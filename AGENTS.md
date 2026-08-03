@@ -50,6 +50,12 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
 - **Paso de célula**: `{ note: bool, degree: entero, velocity: 0..1, sustain: 0.25..1 }`.
   El sustain sale de una onda lenta de legato por célula (tramos ligados y
   tramos picados), no de un sorteo por nota.
+  El ritmo avanza por **valores de nota** (1/2/3/4/6/8 pasos, `NOTE_VALUES`):
+  cada ataque o silencio ocupa un valor entero sorteado con pesos que
+  interpola la onda de respiración (frase activa → valores cortos, reposo →
+  largos), en vez de sortear nota sí/no en cada paso. Así los huecos entre
+  ataques varían y la duración final (`sustain × hueco`, en `Composer`) da
+  también notas tenidas, no solo semicorcheas.
   `degree` es un **grado de escala** (no semitonos) en [-7, 7]; la octava sale de
   dividir por el largo de la escala. Solo se convierte a MIDI en
   `Generator.degreeToMidi`.
