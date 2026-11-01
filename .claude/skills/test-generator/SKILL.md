@@ -55,6 +55,9 @@ tiene distinto al de la madre.
 `formParts`, `cellLength`, `scale`, `key`):
 - `totalSteps === Σ cellLength × totalRepeats` de las secciones.
 - En ningún paso dos pistas tocan el mismo `motifIndex` (invariante central).
+- Sin silencios generales: en cada repetición de célula de cada sección al
+  menos una pista tiene un bloque con `motifIndex` no nulo (`ensureCoverage`).
+  Toda célula tiene ≥ `max(3, ceil(0.15 × largo))` pasos con `note:true`.
 - `durationSteps >= 1` en toda nota y ninguna nota pisa la siguiente de su pista.
 - Letras de forma repetidas comparten spec (mismo `trackBlocks` por letra, salvo
   la sección de recapitulación).

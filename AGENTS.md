@@ -65,6 +65,9 @@ pieza (`Composer.compose`: rejilla de bloques →
   para que el ritmo vuelva al pulso tras una síncopa, y la velocity lleva un
   acento métrico leve en tiempo y cabeza de compás. Las variaciones preservan
   esa alineación: `rotate` solo gira por tiempos enteros (múltiplos de 4).
+  Toda célula (madre y variaciones) tiene al menos `max(3, 15% del largo)`
+  ataques (`MIN_CELL_NOTES`/`MIN_CELL_DENSITY`): se re-sortea hasta cumplirlo,
+  porque una célula casi vacía repetida por una pista sola deja la música muda.
   `degree` es un **grado de escala** (no semitonos) en [-7, 7]; la octava sale de
   dividir por el largo de la escala. Solo se convierte a MIDI en
   `Generator.degreeToMidi`.
@@ -156,6 +159,11 @@ pieza (`Composer.compose`: rejilla de bloques →
    `fractal` y `subsequence` dependen de esto.
 2. **Dos pistas nunca tocan el mismo motivo a la vez** dentro de una sección
    (`slotUsage` en `composer.js`). Antes que duplicar, una pista calla.
+   **Sin silencios generales**: en cada repetición de célula de una sección
+   al menos una pista tiene un bloque con motivo (`ensureCoverage`). Los
+   silencios de bloque y de pista se sortean por separado; si coinciden en
+   todas las pistas, una pista rellena el hueco (biseccionando su bloque mudo,
+   invariante 1), con preferencia por las que no callan la sección entera.
 3. **`degree` siempre entero en [-7, 7]** al salir del generador; los contornos
    crudos son floats y se normalizan en `normalizeContour`.
 4. **Una instancia de sinte por pista**: los sintes monofónicos de Tone fallan al

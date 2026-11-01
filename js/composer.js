@@ -43,14 +43,15 @@ const Composer = (() => {
   // Llena un tramo con motivos que no estén sonando ya en otras pistas (slotUsage).
   // Si el tramo entero no tiene motivo libre se parte en mitades; si ni un tramo
   // mínimo lo tiene, silencio: nunca se duplica un motivo entre pistas
-  function fillSpan(slotStart, size, prev, motifCount, slotUsage) {
+  // next (opcional) es el motivo del bloque que ya sigue al tramo, para no repetirlo
+  function fillSpan(slotStart, size, prev, motifCount, slotUsage, next = -1) {
     const used = new Set();
     for (let i = 0; i < size; i++) {
       for (const m of slotUsage[slotStart + i]) used.add(m);
     }
     const candidates = [];
     for (let m = 0; m < motifCount; m++) {
-      if (m !== prev && !used.has(m)) candidates.push(m);
+      if (m !== prev && m !== next && !used.has(m)) candidates.push(m);
     }
     if (candidates.length) {
       const motifIndex = candidates[Math.floor(Math.random() * candidates.length)];
@@ -61,7 +62,7 @@ const Composer = (() => {
       const half = size / 2;
       const left = fillSpan(slotStart, half, prev, motifCount, slotUsage);
       const lastLeft = left[left.length - 1].motifIndex;
-      const right = fillSpan(slotStart + half, half, lastLeft === null ? -1 : lastLeft, motifCount, slotUsage);
+      const right = fillSpan(slotStart + half, half, lastLeft === null ? -1 : lastLeft, motifCount, slotUsage, next);
       return left.concat(right);
     }
     return [{ motifIndex: null, repeats: size }];
@@ -98,10 +99,59 @@ const Composer = (() => {
       const trackSilent = Math.random() < 0.2;
       trackBlocks.push(trackSilent ? null : buildTrackBlocks(totalRepeats, motifCount, slotUsage));
     }
-    if (trackBlocks.every(b => b === null)) {
-      trackBlocks[Math.floor(Math.random() * numTracks)] = buildTrackBlocks(totalRepeats, motifCount, slotUsage);
-    }
+    ensureCoverage(trackBlocks, totalRepeats, motifCount, slotUsage);
     return { totalRepeats, trackBlocks };
+  }
+
+  // Ninguna repetición de célula de la sección queda muda en todas las pistas:
+  // los silencios por bloque/pista se sortean por separado y, al coincidir,
+  // dejaban silencios generales de decenas de segundos. En cada repetición sin
+  // motivo, una pista con un bloque mudo ahí (antes que una pista callada toda
+  // la sección, que conserva su papel de orquestación) lo rellena. El bloque se
+  // bisecciona (invariante 1) y solo se rellenan las mitades sin cobertura; en
+  // ellas no suena nada, así que siempre hay motivo libre (invariante 2)
+  function ensureCoverage(trackBlocks, totalRepeats, motifCount, slotUsage) {
+    const fillGap = (start, size, prev, next) => {
+      let uncovered = 0;
+      for (let i = start; i < start + size; i++) if (slotUsage[i].size === 0) uncovered++;
+      if (uncovered === 0) return [{ motifIndex: null, repeats: size }];
+      if (uncovered === size) return fillSpan(start, size, prev, motifCount, slotUsage, next);
+      const half = size / 2;
+      const left = fillGap(start, half, prev, -1);
+      const lastLeft = left[left.length - 1].motifIndex;
+      return left.concat(fillGap(start + half, half, lastLeft === null ? -1 : lastLeft, next));
+    };
+    // Bloque mudo de la pista t que contiene la repetición slot, o null
+    const silentBlockAt = (t, slot) => {
+      const blocks = trackBlocks[t];
+      if (blocks === null) return { index: 0, start: 0, prev: -1, next: -1 };
+      let start = 0;
+      for (let i = 0; i < blocks.length; i++) {
+        const end = start + blocks[i].repeats;
+        if (slot < end) {
+          if (blocks[i].motifIndex !== null) return null;
+          const prev = i > 0 && blocks[i - 1].motifIndex !== null ? blocks[i - 1].motifIndex : -1;
+          const next = i + 1 < blocks.length && blocks[i + 1].motifIndex !== null ? blocks[i + 1].motifIndex : -1;
+          return { index: i, start, prev, next };
+        }
+        start = end;
+      }
+      return null;
+    };
+    for (let slot = 0; slot < totalRepeats; slot++) {
+      if (slotUsage[slot].size > 0) continue;
+      const playing = [];
+      const silent = [];
+      trackBlocks.forEach((blocks, t) => {
+        if (blocks === null) silent.push(t);
+        else if (silentBlockAt(t, slot)) playing.push(t);
+      });
+      const t = Generator.pickRandom(playing.length ? playing : silent);
+      if (trackBlocks[t] === null) trackBlocks[t] = [{ motifIndex: null, repeats: totalRepeats }];
+      const { index, start, prev, next } = silentBlockAt(t, slot);
+      const size = trackBlocks[t][index].repeats;
+      trackBlocks[t].splice(index, 1, ...fillGap(start, size, prev, next));
+    }
   }
 
   // Plan de duración: elige el largo de célula y las repeticiones de cada

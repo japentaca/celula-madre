@@ -445,6 +445,35 @@ const Generator = (() => {
     return NOTE_VALUES[NOTE_VALUES.length - 1];
   }
 
+  // Densidad mínima de ataques por célula: el ritmo por valores largos y
+  // silencios puede dejar una célula de 16 pasos con 1-2 notas, y una pista
+  // que la repite durante una sección (más las notas que el humanizador gasta
+  // en las repeticiones) queda casi muda. Madre y variaciones se re-sortean
+  // hasta cumplirla (con tope de intentos)
+  const MIN_CELL_NOTES = 3;
+  const MIN_CELL_DENSITY = 0.15;
+  const DENSITY_ATTEMPTS = 20;
+
+  function hasEnoughNotes(cell) {
+    let count = 0;
+    for (const s of cell) if (s.note) count++;
+    return count >= Math.max(MIN_CELL_NOTES, Math.ceil(cell.length * MIN_CELL_DENSITY));
+  }
+
+  // Sortea con make() hasta cumplir la densidad mínima; si se agotan los
+  // intentos, la más densa de las probadas
+  function withEnoughNotes(make) {
+    let best = null;
+    let bestCount = -1;
+    for (let i = 0; i < DENSITY_ATTEMPTS; i++) {
+      const cell = make();
+      if (hasEnoughNotes(cell)) return cell;
+      const count = cell.filter(s => s.note).length;
+      if (count > bestCount) { best = cell; bestCount = count; }
+    }
+    return best;
+  }
+
   // Cada paso: { note: on/off, degree: grado de escala (entero, octava por división),
   //              velocity: 0..1, sustain: fracción de duración }.
   // El grado se convierte a MIDI recién en degreeToMidi().
@@ -452,6 +481,10 @@ const Generator = (() => {
   // ver resolveContourPool); la densidad y la dinámica respiran con una onda
   // lenta de fraseo.
   function generateMotherCell(length, contourChoice) {
+    return withEnoughNotes(() => buildMotherCell(length, contourChoice));
+  }
+
+  function buildMotherCell(length, contourChoice) {
     const actualLength = length || pickRandom(CELL_LENGTHS);
     const name = pickRandom(resolveContourPool(contourChoice));
     const degrees = normalizeContour(CONTOURS[name](actualLength));
@@ -608,7 +641,7 @@ const Generator = (() => {
     const variations = variationCount || (2 + Math.floor(Math.random() * 3));
     const motifs = [motherCell];
     for (let m = 0; m < variations; m++) {
-      motifs.push(generateVariation(motherCell, contourChoice));
+      motifs.push(withEnoughNotes(() => generateVariation(motherCell, contourChoice)));
     }
     return motifs;
   }
