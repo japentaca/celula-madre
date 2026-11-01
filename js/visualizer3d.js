@@ -1,11 +1,11 @@
-// Vistas 3D de la grilla con THREE.js, dos modos que comparten renderer,
-// shader de notas (destello al sonar), bloom y seguimiento de cámara:
-// - «city»: ciudad de notas — tiempo en X, pistas en profundidad Z, altura
-//   tonal en Y, bloques emisivos instanciados.
-// - «tunnel»: túnel helicoidal — el tiempo se enrolla en una hélice donde una
-//   vuelta completa = una célula (las repeticiones quedan alineadas a lo largo
-//   del eje y las variaciones se ven como cambios en el mismo ángulo); cada
-//   pista es un anillo concéntrico y la cámara viaja por dentro.
+// Vistas 3D de la grilla con THREE.js: cuatro modos que comparten renderer,
+// bloom, cursor, destello de las notas al sonar y seguimiento de cámara:
+// - «city»: ciudad de notas — tiempo en X, pistas en Z, altura tonal en Y.
+// - «tunnel»: túnel helicoidal — una vuelta = una célula, cada pista un
+//   anillo concéntrico, cámara por dentro.
+// - «terrain»: heightfield con una cresta por pista y frente de onda luminoso.
+// - «stars»: cada nota una estrella con onda expansiva; bloques enlazados como
+//   constelaciones y secciones como nebulosas.
 // Implementa la misma interfaz que Visualizer (renderPiece/setCursor/
 // clearCursor) más setMode/setActive; App conmuta con el selector «Vista».
 //
@@ -42,12 +42,19 @@ window.Visualizer3D = (() => {
 
   const FALLBACK_COLORS = [[106, 99, 255], [78, 205, 196], [255, 159, 67]];
 
+  // --- Tasa de render ---
+  const IDLE_FRAME_MS = 1000 / 30 - 4;  // margen para el jitter de rAF: 30 fps a 60/120 Hz
+  const PLAY_HOLD_MS = 1500;            // tras el último paso: cubre destellos y ondas
+  const SETTLE_HOLD_MS = 250;           // tras el último movimiento de cámara
+  const MAX_HIT_RANGES = 512;
+
   let container = null;
   let renderer = null;
   let scene = null;
   let camera = null;
   let controls = null;
   let composer = null;
+  let bloomPass = null;
   let clock = null;
   let resizeObserver = null;
 
@@ -74,8 +81,32 @@ window.Visualizer3D = (() => {
   let insideView = true;      // túnel: «Encuadrar» alterna interior/exterior
   let dimsKey = '';           // modo+dimensiones de la última pieza encuadrada
 
+  // Reposo vs plena tasa (performance.now): «reproduciendo» = el cursor cambió
+  // de paso hace poco; en pausa setCursor repite el mismo paso y no cuenta
+  let lastStepAt = -Infinity;
+  let lastMotionAt = -Infinity;
+  let lastRenderAt = -Infinity;
+  let interacting = false;
+  let dirty = true;
+
   function motifColors() {
     return (typeof Visualizer !== 'undefined' && Visualizer.MOTIF_COLORS) || FALLBACK_COLORS;
+  }
+
+  function midiRange(grid) {
+    if (typeof Visualizer !== 'undefined' && Visualizer.midiRange) return Visualizer.midiRange(grid);
+    let min = Infinity;
+    let max = -Infinity;
+    for (const row of grid) {
+      for (const cell of row) {
+        if (!cell) continue;
+        if (cell.midi < min) min = cell.midi;
+        if (cell.midi > max) max = cell.midi;
+      }
+    }
+    if (min === Infinity) { min = 60; max = 72; }
+    if (min === max) max = min + 1;
+    return { min, max };
   }
 
   // ---- Shader de las notas: lambert falso + fresnel + destello al dispararse ----
@@ -255,8 +286,8 @@ window.Visualizer3D = (() => {
     container.appendChild(renderer.domElement);
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a14);
-    scene.fog = new THREE.FogExp2(0x0a0a14, 0.004);
+    scene.background = new THREE.Color(0x0b0b0d);
+    scene.fog = new THREE.FogExp2(0x0b0b0d, 0.004);
 
     camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
     camera.position.set(30, 20, 40);
@@ -264,10 +295,15 @@ window.Visualizer3D = (() => {
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
+    // 'change' también lo emiten el damping y los movimientos programáticos
+    controls.addEventListener('start', () => { interacting = true; });
+    controls.addEventListener('end', () => { interacting = false; lastMotionAt = performance.now(); });
+    controls.addEventListener('change', () => { lastMotionAt = performance.now(); });
 
     composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.8, 0.35, 0.5));
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.8, 0.35, 0.5);
+    composer.addPass(bloomPass);
     composer.addPass(new OutputPass());
 
     clock = new THREE.Clock();
@@ -317,23 +353,15 @@ window.Visualizer3D = (() => {
     const h = Math.max(1, container.clientHeight);
     renderer.setSize(w, h);
     composer.setSize(w, h);
+    // Bloom más barato: composer.setSize acaba de dejar cada pase al tamaño
+    // completo × pixelRatio, así que se reajusta después. UnrealBloomPass ya
+    // divide por 2 internamente: con este /2 su primer nivel queda a 1/4 del
+    // lienzo (antes 1/2); medido, el halo apenas cambia
+    const pr = renderer.getPixelRatio();
+    bloomPass.setSize(w * pr / 2, h * pr / 2);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-  }
-
-  function midiRange(grid) {
-    let min = Infinity;
-    let max = -Infinity;
-    for (const row of grid) {
-      for (const cell of row) {
-        if (!cell) continue;
-        if (cell.midi < min) min = cell.midi;
-        if (cell.midi > max) max = cell.midi;
-      }
-    }
-    if (min === Infinity) { min = 60; max = 72; }
-    if (min === max) max = min + 1;
-    return { min, max };
+    dirty = true;
   }
 
   function disposeGroup(group) {
@@ -358,11 +386,11 @@ window.Visualizer3D = (() => {
     const pad = 10;
     const canvas = document.createElement('canvas');
     let ctx = canvas.getContext('2d');
-    ctx.font = fontSize + 'px monospace';
+    ctx.font = '500 ' + fontSize + 'px "JetBrains Mono", ui-monospace, monospace';
     canvas.width = Math.ceil(ctx.measureText(text).width) + pad * 2;
     canvas.height = fontSize + pad * 2;
     ctx = canvas.getContext('2d');
-    ctx.font = fontSize + 'px monospace';
+    ctx.font = '500 ' + fontSize + 'px "JetBrains Mono", ui-monospace, monospace';
     ctx.fillStyle = cssColor;
     ctx.textBaseline = 'middle';
     ctx.fillText(text, pad, canvas.height / 2);
@@ -379,8 +407,8 @@ window.Visualizer3D = (() => {
 
   function sectionLabel(section) {
     return section.label
-      + (section.totalRepeats > 1 ? ' x' + section.totalRepeats : '')
-      + (section.recap ? ' (R)' : '');
+      + (section.totalRepeats > 1 ? ' ×' + section.totalRepeats : '')
+      + (section.recap ? ' · recap' : '');
   }
 
   // Recorre el grid creando el InstancedMesh de notas con sus atributos de
@@ -460,6 +488,7 @@ window.Visualizer3D = (() => {
     shaderMats = [];
     terrainMat = null;
     hitAttr = null;
+    dirty = true;
 
     if (mode === 'tunnel') buildTunnel();
     else if (mode === 'terrain') buildTerrain();
@@ -495,7 +524,7 @@ window.Visualizer3D = (() => {
     // Suelo
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(width + 30, depth + 26),
-      new THREE.MeshBasicMaterial({ color: 0x0d0d18 })
+      new THREE.MeshBasicMaterial({ color: 0x111114 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(width / 2, -0.05, laneZ(piece.numTracks - 1) / 2);
@@ -505,13 +534,13 @@ window.Visualizer3D = (() => {
     piece.sections.forEach((section, i) => {
       const sx = section.startStep * STEP;
       const sw = section.lengthSteps * STEP;
-      const slabColor = section.recap ? srgb(255, 170, 80) : srgb(108, 99, 255);
+      const slabColor = section.recap ? srgb(255, 181, 71) : srgb(200, 198, 192);
       const slab = new THREE.Mesh(
         new THREE.PlaneGeometry(sw, depth + 2),
         new THREE.MeshBasicMaterial({
           color: slabColor,
           transparent: true,
-          opacity: section.recap ? 0.10 : (i % 2 === 0 ? 0.10 : 0.04),
+          opacity: section.recap ? 0.07 : (i % 2 === 0 ? 0.05 : 0.02),
           depthWrite: false
         })
       );
@@ -519,7 +548,7 @@ window.Visualizer3D = (() => {
       slab.position.set(sx + sw / 2, 0.01, laneZ(piece.numTracks - 1) / 2);
       cityGroup.add(slab);
 
-      const sprite = makeTextSprite(sectionLabel(section), section.recap ? '#ffaa50' : '#8a83ff', 1.7);
+      const sprite = makeTextSprite(sectionLabel(section), section.recap ? '#ffb547' : '#a3a19b', 1.7);
       sprite.position.set(sx + sw / 2, PITCH_H + 3.2, zBack - 1.5);
       cityGroup.add(sprite);
     });
@@ -527,8 +556,8 @@ window.Visualizer3D = (() => {
     // Rejilla del suelo: pulsos cada 4 pasos tenues, límites de sección marcados
     const linePos = [];
     const lineCol = [];
-    const beatColor = srgb(24, 24, 44);
-    const sectionColor = srgb(108, 99, 255).multiplyScalar(0.4);
+    const beatColor = srgb(30, 30, 34);
+    const sectionColor = srgb(200, 198, 192).multiplyScalar(0.3);
     for (let s = 4; s < piece.totalSteps; s += 4) {
       const isSection = piece.sections.some(sec => sec.startStep === s);
       const c = isSection ? sectionColor : beatColor;
@@ -560,7 +589,7 @@ window.Visualizer3D = (() => {
 
     // Etiquetas de pista
     for (let t = 0; t < piece.numTracks; t++) {
-      const sprite = makeTextSprite('T' + (t + 1), '#6c63ff', 1.3);
+      const sprite = makeTextSprite(String(t + 1).padStart(2, '0'), '#6f6d68', 1.3);
       sprite.position.set(-2.2, 1.1, laneZ(t));
       cityGroup.add(sprite);
     }
@@ -576,14 +605,14 @@ window.Visualizer3D = (() => {
     const slab = new THREE.Mesh(
       new THREE.BoxGeometry(STEP, cursorH, depth + 1.5),
       new THREE.MeshBasicMaterial({
-        color: 0xff3333, transparent: true, opacity: 0.10,
+        color: 0xff5a4e, transparent: true, opacity: 0.10,
         blending: THREE.AdditiveBlending, depthWrite: false
       })
     );
     const core = new THREE.Mesh(
       new THREE.BoxGeometry(0.16, cursorH, depth + 1.5),
       new THREE.MeshBasicMaterial({
-        color: 0xff6666, transparent: true, opacity: 0.9,
+        color: 0xff8a80, transparent: true, opacity: 0.9,
         blending: THREE.AdditiveBlending, depthWrite: false
       })
     );
@@ -617,7 +646,7 @@ window.Visualizer3D = (() => {
     const ringGeo = new THREE.TorusGeometry(rOuter + 0.6, 0.09, 8, 64);
     piece.sections.forEach(section => {
       const x = tunnelX(section.startStep);
-      const color = section.recap ? 0xffaa50 : 0x6c63ff;
+      const color = section.recap ? 0xffb547 : 0x8f8d87;
       const ring = new THREE.Mesh(
         ringGeo.clone(),
         new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5 })
@@ -626,7 +655,7 @@ window.Visualizer3D = (() => {
       ring.position.x = x;
       cityGroup.add(ring);
 
-      const sprite = makeTextSprite(sectionLabel(section), section.recap ? '#ffaa50' : '#8a83ff', 2.0);
+      const sprite = makeTextSprite(sectionLabel(section), section.recap ? '#ffb547' : '#a3a19b', 2.0);
       sprite.position.set(x + 0.8, -R0 * 0.35, 0);
       cityGroup.add(sprite);
     });
@@ -634,7 +663,7 @@ window.Visualizer3D = (() => {
 
     // Etiquetas de pista en la boca del túnel, una por banda radial
     for (let t = 0; t < piece.numTracks; t++) {
-      const sprite = makeTextSprite('T' + (t + 1), '#6c63ff', 1.5);
+      const sprite = makeTextSprite(String(t + 1).padStart(2, '0'), '#6f6d68', 1.5);
       sprite.position.set(-1.6, R0 + t * BAND + PITCH_R / 2, 0);
       cityGroup.add(sprite);
     }
@@ -657,14 +686,14 @@ window.Visualizer3D = (() => {
     const slab = new THREE.Mesh(
       new THREE.BoxGeometry(1.4, radialSpan, arcMid * 1.6),
       new THREE.MeshBasicMaterial({
-        color: 0xff3333, transparent: true, opacity: 0.12,
+        color: 0xff5a4e, transparent: true, opacity: 0.12,
         blending: THREE.AdditiveBlending, depthWrite: false
       })
     );
     const core = new THREE.Mesh(
       new THREE.BoxGeometry(1.4, radialSpan, 0.18),
       new THREE.MeshBasicMaterial({
-        color: 0xff6666, transparent: true, opacity: 0.9,
+        color: 0xff8a80, transparent: true, opacity: 0.9,
         blending: THREE.AdditiveBlending, depthWrite: false
       })
     );
@@ -675,7 +704,7 @@ window.Visualizer3D = (() => {
     ringMesh = new THREE.Mesh(
       new THREE.TorusGeometry(rOuter + 0.3, 0.06, 8, 64),
       new THREE.MeshBasicMaterial({
-        color: 0xff4444, transparent: true, opacity: 0.35,
+        color: 0xff5a4e, transparent: true, opacity: 0.35,
         blending: THREE.AdditiveBlending, depthWrite: false
       })
     );
@@ -730,7 +759,7 @@ window.Visualizer3D = (() => {
     }
 
     // Tinte por sección: bandas alternadas, mezcla ámbar en la recapitulación
-    const amber = srgb(255, 170, 80);
+    const amber = srgb(255, 181, 71);
     const tint = new Array(W + 1).fill(1);
     piece.sections.forEach((section, i) => {
       const end = Math.min(section.startStep + section.lengthSteps, W);
@@ -765,20 +794,23 @@ window.Visualizer3D = (() => {
         v++;
       }
     }
-    const index = [];
+    const IndexArray = vertsX * rowsZ > 65535 ? Uint32Array : Uint16Array;
+    const index = new IndexArray((rowsZ - 1) * (vertsX - 1) * 6);
+    let k = 0;
     for (let iz = 0; iz < rowsZ - 1; iz++) {
       for (let ix = 0; ix < vertsX - 1; ix++) {
         const a = iz * vertsX + ix;
         const b = a + 1;
         const c = a + vertsX;
         const d = c + 1;
-        index.push(a, c, b, b, c, d);
+        index[k++] = a; index[k++] = c; index[k++] = b;
+        index[k++] = b; index[k++] = c; index[k++] = d;
       }
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(aColor, 3));
-    geo.setIndex(index);
+    geo.setIndex(new THREE.BufferAttribute(index, 1));
     geo.computeVertexNormals();
 
     terrainMat = new THREE.ShaderMaterial({
@@ -798,12 +830,12 @@ window.Visualizer3D = (() => {
 
     // Etiquetas de sección y de pista
     piece.sections.forEach(section => {
-      const sprite = makeTextSprite(sectionLabel(section), section.recap ? '#ffaa50' : '#8a83ff', 1.7);
+      const sprite = makeTextSprite(sectionLabel(section), section.recap ? '#ffb547' : '#a3a19b', 1.7);
       sprite.position.set((section.startStep + section.lengthSteps / 2) * STEP, 9.5, -depth - 2);
       cityGroup.add(sprite);
     });
     for (let t = 0; t < piece.numTracks; t++) {
-      const sprite = makeTextSprite('T' + (t + 1), '#6c63ff', 1.3);
+      const sprite = makeTextSprite(String(t + 1).padStart(2, '0'), '#6f6d68', 1.3);
       sprite.position.set(-2.2, 1.4, -(t + 0.5) * T_BAND);
       cityGroup.add(sprite);
     }
@@ -963,18 +995,18 @@ window.Visualizer3D = (() => {
       const neb = new THREE.Sprite(new THREE.SpriteMaterial({
         map: glowTex, transparent: true, depthWrite: false,
         blending: THREE.AdditiveBlending, opacity: 0.13,
-        color: section.recap ? 0xffaa50 : 0x6c63ff
+        color: section.recap ? 0xffb547 : 0x6c63ff
       }));
       neb.scale.set(section.lengthSteps * STEP * 0.9, S_H * 1.9, 1);
       neb.position.set(cx, S_H * 0.5, centerZ);
       cityGroup.add(neb);
 
-      const label = makeTextSprite(sectionLabel(section), section.recap ? '#ffaa50' : '#8a83ff', 1.7);
+      const label = makeTextSprite(sectionLabel(section), section.recap ? '#ffb547' : '#a3a19b', 1.7);
       label.position.set(cx, S_H + 4, -(piece.numTracks - 1) * S_LANE - 4);
       cityGroup.add(label);
     });
     for (let t = 0; t < piece.numTracks; t++) {
-      const sprite = makeTextSprite('T' + (t + 1), '#6c63ff', 1.3);
+      const sprite = makeTextSprite(String(t + 1).padStart(2, '0'), '#6f6d68', 1.3);
       sprite.position.set(-3, 1.2, -t * S_LANE);
       cityGroup.add(sprite);
     }
@@ -985,14 +1017,14 @@ window.Visualizer3D = (() => {
     const slab = new THREE.Mesh(
       new THREE.BoxGeometry(STEP, S_H + 8, depth),
       new THREE.MeshBasicMaterial({
-        color: 0xff3333, transparent: true, opacity: 0.07,
+        color: 0xff5a4e, transparent: true, opacity: 0.07,
         blending: THREE.AdditiveBlending, depthWrite: false
       })
     );
     const core = new THREE.Mesh(
       new THREE.BoxGeometry(0.16, S_H + 8, depth),
       new THREE.MeshBasicMaterial({
-        color: 0xff6666, transparent: true, opacity: 0.5,
+        color: 0xff8a80, transparent: true, opacity: 0.5,
         blending: THREE.AdditiveBlending, depthWrite: false
       })
     );
@@ -1116,12 +1148,24 @@ window.Visualizer3D = (() => {
     }
     cursorGroup.visible = true;
     if (terrainMat) terrainMat.uniforms.uCursorOn.value = 1;
+    dirty = true;
     if (step === cursorStepLast) return;
     cursorStepLast = step;
+    lastStepAt = performance.now();
     const hits = hitIndex.get(step);
     if (hits && hitAttr) {
       const now = clock.elapsedTime;
-      for (const i of hits) hitAttr.setX(i, now);
+      // Subida parcial: three fusiona los rangos y los limpia al subir, así que
+      // se acumulan entre renders (no limpiar aquí: se perderían disparos). Sin
+      // render (pestaña oculta) se colapsan en uno que cubre todo el atributo
+      if (hitAttr.updateRanges.length > MAX_HIT_RANGES) {
+        hitAttr.clearUpdateRanges();
+        hitAttr.addUpdateRange(0, hitAttr.array.length);
+      }
+      for (const i of hits) {
+        hitAttr.setX(i, now);
+        hitAttr.addUpdateRange(i, 1);
+      }
       hitAttr.needsUpdate = true;
     }
   }
@@ -1130,6 +1174,7 @@ window.Visualizer3D = (() => {
     cursorStepLast = -1;
     if (cursorGroup) cursorGroup.visible = false;
     if (terrainMat) terrainMat.uniforms.uCursorOn.value = 0;
+    dirty = true;
   }
 
   function setActive(on) {
@@ -1147,12 +1192,11 @@ window.Visualizer3D = (() => {
     }
     rafId = requestAnimationFrame(tick);
     const dt = clock.getDelta();
-
-    for (const m of shaderMats) {
-      if (m.uniforms.uTime) m.uniforms.uTime.value = clock.elapsedTime;
-    }
+    let animating = false;
 
     if (cursorGroup && cursorGroup.visible) {
+      animating = Math.abs(cursorTarget.x - cursorCur.x) > 1e-3
+        || Math.abs(cursorTarget.th - cursorCur.th) > 1e-4;
       const k = 1 - Math.exp(-dt * 14);
       cursorCur.x += (cursorTarget.x - cursorCur.x) * k;
       cursorCur.th += (cursorTarget.th - cursorCur.th) * k;
@@ -1178,7 +1222,21 @@ window.Visualizer3D = (() => {
       }
     }
 
+    // Damping y seguimiento avanzan en cada frame; el render (con bloom) baja a
+    // ~30 fps en reposo. Las animaciones de reposo dependen de uTime, que sigue
+    // el reloj real, así que solo pierden fluidez
     controls.update();
+    const now = performance.now();
+    const fullRate = dirty || animating || interacting
+      || now - lastStepAt < PLAY_HOLD_MS
+      || now - lastMotionAt < SETTLE_HOLD_MS;
+    if (!fullRate && now - lastRenderAt < IDLE_FRAME_MS) return;
+    lastRenderAt = now;
+    dirty = false;
+
+    for (const m of shaderMats) {
+      if (m.uniforms.uTime) m.uniforms.uTime.value = clock.elapsedTime;
+    }
     composer.render();
   }
 

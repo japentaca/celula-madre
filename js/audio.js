@@ -96,6 +96,13 @@ const AudioEngine = (() => {
     }
   }
 
+  // Sin gesto previo del usuario el navegador deja el contexto suspendido
+  // (salvo políticas de autoplay permisivas, p. ej. un kiosco con
+  // --autoplay-policy=no-user-gesture-required)
+  function isRunning() {
+    return Tone.context.state === 'running';
+  }
+
   // preset: nombre de fábrica o definición { base, params, chain } (preset de
   // usuario o edición en vivo del editor de sintes)
   function makeSynth(preset) {
@@ -142,11 +149,27 @@ const AudioEngine = (() => {
     try { track.delSend.dispose(); } catch (e) { /* ignore */ }
   }
 
+  // Pistas de la pieza anterior: desecharlas en seco cortaría las colas de
+  // release de las últimas notas (y las notas en vuelo si se regenera en plena
+  // reproducción). Se desvanecen canal y envíos y se desechan al terminar
+  const RETIRE_FADE = 4;
+
+  function retireTrack(track) {
+    const now = Tone.now();
+    for (const param of [track.channel.gain, track.revSend.gain, track.delSend.gain]) {
+      try {
+        param.cancelScheduledValues(now);
+        param.rampTo(0, RETIRE_FADE, now);
+      } catch (e) { /* ignore */ }
+    }
+    setTimeout(() => disposeTrack(track), (RETIRE_FADE + 0.5) * 1000);
+  }
+
   // configs: [{ preset, volume, reverb, delay, pan }] — una instancia de sinte por pista
   // (instancias compartidas provocan errores de retrigger en sintes monofónicos)
   function setupTracks(configs) {
     ensureGraph();
-    for (const track of tracks) disposeTrack(track);
+    for (const track of tracks) retireTrack(track);
     tracks = configs.map(cfg => {
       const channel = new Tone.Gain(cfg.volume);
       channel.connect(masterGain);
@@ -294,6 +317,7 @@ const AudioEngine = (() => {
 
   return {
     init,
+    isRunning,
     setupTracks,
     setTrackPreset,
     setTrackSynthParams,

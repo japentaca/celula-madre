@@ -5,12 +5,24 @@ const Visualizer = (() => {
   let offCtx = null;
   let piece = null;
   let cursorStep = -1;
+  // Tamaño CSS del lienzo y factor físico/CSS efectivo (dpr acotado)
+  let cssWidth = 0;
+  let cssHeight = 0;
+  let pixelScale = 1;
 
   let cellWidth = 12;
   let trackHeight = 44;
   const headerWidth = 50;
   const topBar = 24;
   let noteHeight = 6;
+
+  // Paleta del lienzo, a juego con los tokens de css/style.css
+  const BG = '#0b0b0d';
+  const LINE = '#1c1c20';
+  const LABEL = '#8f8d87';
+  const FAINT = '#5f5e5a';
+  const RECAP = 'rgba(255, 181, 71, 0.95)';
+  const MONO = '"JetBrains Mono", ui-monospace, Consolas, monospace';
 
   // Color por motivo: [0] célula madre, resto variaciones
   const MOTIF_COLORS = [
@@ -84,22 +96,46 @@ const Visualizer = (() => {
     document.documentElement.style.setProperty('--track-height', trackHeight + 'px');
     const height = topBar + piece.numTracks * trackHeight;
 
-    canvas.width = width;
-    canvas.height = height;
+    cssWidth = width;
+    cssHeight = height;
+    pixelScale = effectivePixelScale(width, height);
+    const physWidth = Math.ceil(width * pixelScale);
+    const physHeight = Math.ceil(height * pixelScale);
+
+    canvas.width = physWidth;
+    canvas.height = physHeight;
     canvas.style.width = width + 'px';
     canvas.style.height = height + 'px';
+    ctx.setTransform(pixelScale, 0, 0, pixelScale, 0, 0);
 
     offscreen = document.createElement('canvas');
-    offscreen.width = width;
-    offscreen.height = height;
+    offscreen.width = physWidth;
+    offscreen.height = physHeight;
     offCtx = offscreen.getContext('2d');
+    offCtx.setTransform(pixelScale, 0, 0, pixelScale, 0, 0);
 
     drawPiece(offCtx, width, height);
     blit();
   }
 
+  // Los navegadores no pintan (o fallan en silencio) lienzos por encima de
+  // ~16384 px de lado o de ~16 Mpx de área (Safari/iOS es el más estricto);
+  // en piezas largas se sacrifica nitidez antes que dejar el lienzo en blanco
+  const MAX_CANVAS_SIDE = 16384;
+  const MAX_CANVAS_AREA = 16 * 1024 * 1024;
+
+  function effectivePixelScale(width, height) {
+    const dpr = window.devicePixelRatio || 1;
+    return Math.min(
+      dpr,
+      MAX_CANVAS_SIDE / width,
+      MAX_CANVAS_SIDE / height,
+      Math.sqrt(MAX_CANVAS_AREA / (width * height))
+    );
+  }
+
   function drawPiece(g, width, height) {
-    g.fillStyle = '#0a0a14';
+    g.fillStyle = BG;
     g.fillRect(0, 0, width, height);
 
     const range = midiRange(piece.grid);
@@ -108,18 +144,20 @@ const Visualizer = (() => {
     piece.sections.forEach((section, i) => {
       const sx = headerWidth + section.startStep * cellWidth;
       const sw = section.lengthSteps * cellWidth;
-      g.fillStyle = i % 2 === 0 ? 'rgba(108, 99, 255, 0.10)' : 'rgba(108, 99, 255, 0.04)';
+      g.fillStyle = section.recap
+        ? 'rgba(255, 181, 71, 0.045)'
+        : (i % 2 === 0 ? 'rgba(255, 255, 255, 0.028)' : 'rgba(255, 255, 255, 0.008)');
       g.fillRect(sx, topBar, sw, piece.numTracks * trackHeight);
 
-      g.fillStyle = section.recap ? 'rgba(255, 170, 80, 0.9)' : 'rgba(108, 99, 255, 0.7)';
-      g.font = '10px monospace';
-      g.textAlign = 'center';
+      g.fillStyle = section.recap ? RECAP : LABEL;
+      g.font = `500 10px ${MONO}`;
+      g.textAlign = 'left';
       const label = section.label
-        + (section.totalRepeats > 1 ? ' x' + section.totalRepeats : '')
-        + (section.recap ? ' (R)' : '');
-      g.fillText(label, sx + sw / 2, 16);
+        + (section.totalRepeats > 1 ? ' ×' + section.totalRepeats : '')
+        + (section.recap ? '  recap' : '');
+      g.fillText(label, sx + 8, 16);
 
-      g.strokeStyle = 'rgba(108, 99, 255, 0.35)';
+      g.strokeStyle = 'rgba(255, 255, 255, 0.10)';
       g.lineWidth = 1;
       g.beginPath();
       g.moveTo(sx + 0.5, topBar);
@@ -130,8 +168,8 @@ const Visualizer = (() => {
     for (let t = 0; t < piece.numTracks; t++) {
       const y = topBar + t * trackHeight;
 
-      g.strokeStyle = '#1a1a2e';
-      g.lineWidth = 0.5;
+      g.strokeStyle = LINE;
+      g.lineWidth = 1;
       g.strokeRect(headerWidth, y, piece.totalSteps * cellWidth, trackHeight);
 
       const row = piece.grid[t];
@@ -151,10 +189,10 @@ const Visualizer = (() => {
         g.fillRect(x, ny, noteWidth, noteHeight);
       }
 
-      g.fillStyle = '#6c63ff';
-      g.font = '10px monospace';
+      g.fillStyle = FAINT;
+      g.font = `10px ${MONO}`;
       g.textAlign = 'right';
-      g.fillText('T' + (t + 1), headerWidth - 6, y + trackHeight / 2 + 3);
+      g.fillText(String(t + 1).padStart(2, '0'), headerWidth - 10, y + trackHeight / 2 + 3);
     }
 
     // Límite izquierdo de cada bloque dentro de su pista
@@ -172,33 +210,56 @@ const Visualizer = (() => {
       }
     }
 
-    g.strokeStyle = '#6c63ff';
-    g.lineWidth = 1.5;
-    g.strokeRect(headerWidth, topBar, piece.totalSteps * cellWidth, piece.numTracks * trackHeight);
+    g.strokeStyle = '#26262b';
+    g.lineWidth = 1;
+    g.strokeRect(headerWidth + 0.5, topBar + 0.5, piece.totalSteps * cellWidth - 1, piece.numTracks * trackHeight - 1);
   }
 
   function blit() {
     if (!ctx || !offscreen) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(offscreen, 0, 0);
-    if (cursorStep >= 0) {
-      const x = headerWidth + cursorStep * cellWidth;
-      ctx.fillStyle = 'rgba(255, 80, 80, 0.25)';
-      ctx.fillRect(x, topBar, cellWidth, canvas.height - topBar);
-      ctx.fillStyle = '#ff3333';
-      ctx.fillRect(x, topBar, 2, canvas.height - topBar);
-    }
+    ctx.setTransform(pixelScale, 0, 0, pixelScale, 0, 0);
+    drawCursor();
+  }
+
+  function drawCursor() {
+    if (cursorStep < 0) return;
+    const x = headerWidth + cursorStep * cellWidth;
+    ctx.fillStyle = 'rgba(255, 90, 78, 0.18)';
+    ctx.fillRect(x, topBar, cellWidth, cssHeight - topBar);
+    ctx.fillStyle = '#ff5a4e';
+    ctx.fillRect(x, topBar, 2, cssHeight - topBar);
+  }
+
+  // Repinta desde el offscreen solo la franja que ensució el cursor en ese
+  // paso, en px físicos y con 1 px de margen por el antialias de escalas no
+  // enteras
+  function restoreColumn(step) {
+    const x = headerWidth + step * cellWidth;
+    const x0 = Math.max(0, Math.floor(x * pixelScale) - 1);
+    const x1 = Math.min(canvas.width, Math.ceil((x + Math.max(cellWidth, 2)) * pixelScale) + 1);
+    const y0 = Math.max(0, Math.floor(topBar * pixelScale) - 1);
+    const y1 = canvas.height;
+    if (x1 <= x0 || y1 <= y0) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.drawImage(offscreen, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+    ctx.setTransform(pixelScale, 0, 0, pixelScale, 0, 0);
   }
 
   function setCursor(step) {
+    if (!ctx || !offscreen) return;
+    if (cursorStep >= 0) restoreColumn(cursorStep);
     cursorStep = step;
-    blit();
+    drawCursor();
     scrollToCursor();
   }
 
   function clearCursor() {
+    if (ctx && offscreen && cursorStep >= 0) restoreColumn(cursorStep);
     cursorStep = -1;
-    blit();
   }
 
   function scrollToCursor() {
@@ -211,6 +272,6 @@ const Visualizer = (() => {
     }
   }
 
-  // MOTIF_COLORS se comparte con la vista 3D para que ambas pinten igual
-  return { init, renderPiece, setCursor, clearCursor, MOTIF_COLORS };
+  // MOTIF_COLORS y midiRange se comparten con la vista 3D para que ambas pinten igual
+  return { init, renderPiece, setCursor, clearCursor, MOTIF_COLORS, midiRange };
 })();

@@ -24,25 +24,30 @@ Todo se **pre-computa antes de reproducir**; no hay generación en tiempo real.
 
 ## Arquitectura
 
-Ocho módulos IIFE que exponen un objeto global cada uno. El orden de carga en
-`index.html` importa (no hay imports):
+Diez módulos IIFE (scripts clásicos) más uno ESM (`visualizer3d.js`), cada uno
+expone un objeto global. El orden de carga en `index.html` importa (no hay
+imports; `generator.js` va antes que los pases porque comparte utilidades):
 
 | Módulo | Global | Responsabilidad |
 |---|---|---|
-| `js/audio.js` | `AudioEngine` | Grafo de audio Tone.js: presets de sintes (nombre de fábrica o definición `{ base, params, chain }`), una instancia por pista, cadena de efectos de inserción por pista (sinte→fx→panner), envíos a reverb/delay, paneo, master. Se puede deshabilitar desde el topbar (checkbox Audio) sin parar el Transport. |
+| `js/audio.js` | `AudioEngine` | Grafo de audio Tone.js: presets de sintes (nombre de fábrica o definición `{ base, params, chain }`), una instancia por pista, cadena de efectos de inserción por pista (sinte→fx→panner), envíos a reverb/delay, paneo, master. Se puede deshabilitar desde el topbar (checkbox Audio) sin parar el Transport. `setupTracks` no desecha en seco las pistas de la pieza anterior: las desvanece (`RETIRE_FADE`, 4 s) para no cortar colas de release ni notas en vuelo, y las desecha después. |
 | `js/syntheditor.js` | `SynthEditor` | Editor modal por pista: esquemas declarativos de parámetros por tipo de sinte, cadena de efectos (catálogo curado, reordenable), edición en vivo vía `AudioEngine`, presets de usuario en localStorage (`binario.userPresets`, id `user:Nombre`) con export/import JSON. Comunica cambios a `App` por callbacks (`trackSettings.edited`). |
 | `js/midi.js` | `MidiEngine` | Salida Web MIDI hacia VSTs/hardware: puerto global (topbar), canal 1-16 por pista (strip), note-on/off con timestamps en dominio `performance.now()`, y al parar `clear()` + note-off explícito por nota activa + CC 123/120 (muchos VSTs ignoran los CCs de modo). Sin puerto seleccionado no hace nada. |
-| `js/visualizer.js` | `Visualizer` | Piano roll en canvas (offscreen + blit), cursor con autoscroll, colores por motivo (`MOTIF_COLORS`, compartidos con la vista 3D). |
-| `js/visualizer3d.js` | `Visualizer3D` | Vistas 3D con THREE.js, cuatro modos que comparten renderer, bloom, cursor y seguimiento de cámara: «city» (ciudad de notas: bloques instanciados, tiempo en X, pistas en Z, altura en Y), «tunnel» (túnel helicoidal: una vuelta = una célula, cada pista un anillo concéntrico, cámara interior; «Encuadrar» alterna interior/exterior), «terrain» (heightfield continuo con crestas por pista, biomas por motivo y frente de onda luminoso en el shader) y «stars» (cada nota una estrella con flare y onda expansiva al sonar, bloques enlazados como constelaciones, secciones como nebulosas). Misma interfaz que `Visualizer` más `setMode`; `App` conmuta con el selector «Vista» del topbar (persistido) y despacha a la vista activa (`viz()`/`vizRender`). Módulo ESM (los addons de THREE no existen como script clásico): se carga con `<script type="module">` y publica `window.Visualizer3D`. |
+| `js/visualizer.js` | `Visualizer` | Piano roll en canvas (offscreen + blit), cursor con autoscroll, colores por motivo (`MOTIF_COLORS` y `midiRange`, compartidos con la vista 3D). Lienzo HiDPI con el dpr acotado para no pasar los límites de tamaño de canvas en piezas largas; el cursor solo repinta su columna desde el offscreen, así que cualquier cambio de la pieza exige `renderPiece` completo (en `App`, `vizRefresh` lo hace y repone el cursor). |
+| `js/visualizer3d.js` | `Visualizer3D` | Vistas 3D con THREE.js, cuatro modos que comparten renderer, bloom, cursor y seguimiento de cámara: «city» (ciudad de notas: bloques instanciados, tiempo en X, pistas en Z, altura en Y), «tunnel» (túnel helicoidal: una vuelta = una célula, cada pista un anillo concéntrico, cámara interior; «Encuadrar» alterna interior/exterior), «terrain» (heightfield continuo con crestas por pista, biomas por motivo y frente de onda luminoso en el shader) y «stars» (cada nota una estrella con flare y onda expansiva al sonar, bloques enlazados como constelaciones, secciones como nebulosas). Misma interfaz que `Visualizer` más `setMode`; `App` conmuta con el selector «Vista» del topbar (persistido) y despacha a la vista activa (`viz()`/`vizRender`). Módulo ESM (los addons de THREE no existen como script clásico): se carga con `<script type="module">` y publica `window.Visualizer3D`. El render (con bloom a resolución reducida) baja a ~30 fps en reposo y vuelve a plena tasa con `dirty`, cursor en marcha o cámara en movimiento: todo cambio de estado visible fuera de `tick` debe poner `dirty = true`. |
 | `js/generator.js` | `Generator` | Material musical: célula madre con contorno orgánico, variaciones (invertir, rotar, retrogradar…), formas, escalas, grados→MIDI. |
 | `js/humanizer.js` | `Humanizer` | Pase de humanización sobre el `grid` compuesto: mutación de repeticiones, notas de paso, articulación contextual, arcos de dinámica y respiraciones. Sin efecto sobre el tempo. |
+| `js/energy.js` | `Energy` | Pase determinista de balance de energía entre pistas: por ventanas de una célula cuenta ataques audibles (velocity > `GHOST_VELOCITY`) frente a un presupuesto que sigue un arco con clímax hacia el 65% de la pieza; si se excede, las pistas de fondo (menos salientes por velocity y agudeza, medidas solo sobre sus notas protegidas para que el pase sea idempotente) ceden en ronda sus notas más débiles y la nota anterior se alarga hacia el hueco. Nunca toca el primer plano, tiempos fuertes, la primera pasada ni la última nota de cada bloque, ni la pista de recapitulación. Solo borra celdas y sube sustain; no toca grados ni midi. |
 | `js/counterpoint.js` | `Counterpoint` | Pase determinista de consonancia vertical entre pistas: resuelve disonancias duras (segundas, séptimas, tritono) moviendo ±1 grado, apagando o acortando notas; abre unísonos a la octava. Tolera notas de paso en tiempo débil. |
-| `js/composer.js` | `Composer` | Composición lineal de la pieza (secciones, bloques por pista, recapitulación) y transporte de reproducción. Llama a `Humanizer.humanize` y luego `Counterpoint.enforce` antes de calcular duraciones. Cada nota se despacha a la vez a `AudioEngine.playNote` y `MidiEngine.playNote`; cada motor decide si suena. |
-| `js/app.js` | `App` | UI: topbar, panel de pistas, estado persistente por pista, orquestación generar/play/stop. |
+| `js/composer.js` | `Composer` | Composición lineal de la pieza (secciones, bloques por pista, recapitulación) y transporte de reproducción. `planDuration` traduce una duración objetivo en pasos a largo de célula y repeticiones por letra. Llama a `Humanizer.humanize`, `Energy.balance` y `Counterpoint.enforce`, en ese orden, antes de calcular duraciones. Cada nota se despacha a la vez a `AudioEngine.playNote` y `MidiEngine.playNote`; cada motor decide si suena. |
+| `js/app.js` | `App` | UI: topbar, barra de la pieza (tonalidad, forma, tiempo y secciones clicables que saltan con `Composer.seek`), panel de pistas tipo mezclador, estado persistente por pista, orquestación generar/play/stop. Transporte: ▶ alterna reproducir/pausa (también Espacio), ■ para y rebobina; F alterna pantalla completa. Encadenado de piezas (Auto-generar / Auto-reinicio) con un respiro de `PIECE_GAP_MS` y modo kiosco (ver abajo). |
 
 Flujo de una generación (`App.generate`):
+sorteo de pistas/duración/tempo si tienen «azar» → forma (`generateForm`) →
+plan de duración (`Composer.planDuration`: largo de célula y repeticiones) →
 célula madre (`Generator.generateMotherCell`) → motivos (`generateMotifs`) →
-forma (`generateForm`) → pieza (`Composer.compose`) → render
+pieza (`Composer.compose`: rejilla de bloques →
+`Humanizer` → `Energy` → `Counterpoint` → duraciones y `stepEvents`) → render
 (`Visualizer.renderPiece`) + configuración de pistas (`AudioEngine.setupTracks`).
 
 ## Modelo de datos
@@ -55,7 +60,11 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
   interpola la onda de respiración (frase activa → valores cortos, reposo →
   largos), en vez de sortear nota sí/no en cada paso. Así los huecos entre
   ataques varían y la duración final (`sustain × hueco`, en `Composer`) da
-  también notas tenidas, no solo semicorcheas.
+  también notas tenidas, no solo semicorcheas. Los valores que dejan el
+  siguiente ataque en tiempo (paso múltiplo de 4) pesan `BEAT_PULL` veces más,
+  para que el ritmo vuelva al pulso tras una síncopa, y la velocity lleva un
+  acento métrico leve en tiempo y cabeza de compás. Las variaciones preservan
+  esa alineación: `rotate` solo gira por tiempos enteros (múltiplos de 4).
   `degree` es un **grado de escala** (no semitonos) en [-7, 7]; la octava sale de
   dividir por el largo de la escala. Solo se convierte a MIDI en
   `Generator.degreeToMidi`.
@@ -65,14 +74,63 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
 - **Motivos**: `motifs[0]` es siempre la célula madre; siguen 2+ variaciones.
   Una variación puede (prob. 0.4, `recontour`) redibujar sus alturas con otro
   algoritmo de contorno distinto al de la madre, conservando ritmo, dinámica y
-  sustain.
+  sustain. El transporte de una variación solo elige desplazamientos que
+  mantienen sus notas en [-7, 7] y la máscara final se recorta al rango
+  (invariante 3).
 - **Contornos permitidos**: el multiselect de contorno del topbar restringe el
   sorteo (madre y `recontour`) a los marcados (`resolveContourPool` acepta
   nombre, lista o nada); sin ninguno marcado se sortea entre todos, y con uno
   solo las variaciones nunca cambian de algoritmo.
+- **Duración en minutos**: el slider Duración (1–20) es una duración objetivo
+  al tempo con que se genera (`minutos × bpm × 4` pasos). `planDuration`
+  prueba cada largo de célula con repeticiones base/2, base y base×2 por letra,
+  y sortea entre los planes con un error relativo de hasta `DURATION_TOLERANCE`
+  por encima del mejor. Prefiere los que no pasan de `REPEAT_SOFT_CAP`
+  repeticiones por sección y, si no hay ninguno, los de célula más larga. Todo
+  sigue siendo potencia de 2, así que la duración real se desvía hasta un ~10%.
+  Sin `repeatsByLetter`, `compose` sortea repeticiones como antes
+  (`SECTION_REPEAT_CHOICES`).
+- **Pistas, duración y tempo al azar**: en el diálogo Generación cada uno
+  tiene un interruptor «azar» con un rango mín–máx (`RANDOM_RANGES` en
+  `app.js`, rango doble de dos sliders superpuestos). Se sortean en
+  `App.generate`, una vez por pieza, de modo que con Auto-generar cada pieza
+  del modo kiosco sale distinta. El número de pistas se lee después de
+  `piece.numTracks`, no del slider; el tempo sorteado se escribe en el slider
+  del topbar.
+- **Encadenado y modo kiosco** (`app.js`): al terminar una pieza, si toca
+  regenerar se compone la siguiente en el acto, para que las pistas salientes
+  se desvanezcan durante el respiro, y suena tras `PIECE_GAP_MS`; parar o
+  pausar cancela el arranque pendiente. El interruptor «Modo kiosco» (diálogo
+  Salida, persistido) hace lo siguiente:
+  - nunca deja la música parada: regenera aunque Auto-generar esté apagado,
+    salvo con Auto-reinicio;
+  - mantiene la pantalla encendida con Wake Lock, que vuelve a pedir al
+    hacerse visible la pestaña;
+  - oculta la interfaz (`body.ui-idle`) tras `IDLE_MS` sin actividad mientras
+    suena. Los `pointermove` sin desplazamiento no cuentan;
+  - al cargar intenta sonar sin gesto (`kioskBoot`). Si el navegador lo
+    bloquea, muestra «Toca para comenzar» y el primer gesto en cualquier parte
+    arranca el audio y pide pantalla completa.
+
+  Activarlo con un clic real entra en el acto (pantalla completa + play);
+  restaurarlo al cargar no, porque esos eventos no son de confianza.
+- **Escala y tonalidad aleatorias**: los selectores del topbar tienen la
+  opción «Aleatoria» (`random`), que se sortea en cada generación con
+  `Generator.resolveScale` (entre `RANDOM_SCALES`, sin la cromática) y
+  `Generator.resolveKey`; la opción muestra lo que suena, p. ej. «Aleatoria
+  (Doria)». Lo resuelto vive en `piece.scale`/`piece.key`: `compose` siempre
+  recibe valores concretos, y elegir «Aleatoria» no re-afina la pieza en curso.
 - **Pieza** (`Composer.compose`): `{ sections, totalSteps, grid, stepEvents,
   blockMarkers, numTracks, cellLength, scale, key, contour }`.
-  `grid[pista][paso]` para el visualizador; `stepEvents[paso]` para el transporte.
+  `grid[pista][paso]` (celda `{ midi, degree, keyOffset, velocity, sustain,
+  motifIndex, durationSteps }` o `null`) para el visualizador;
+  `stepEvents[paso]` para el transporte: lista de `{ trackIndex, cell }` donde
+  `cell` es **la misma celda del `grid`** (referencia, no copia), así que
+  cualquier cambio en el grid (p. ej. `retune`) se ve al reproducir.
+- **Utilidades compartidas** en `Generator` (carga antes que los pases):
+  `GHOST_VELOCITY` (0.18, umbral de nota fantasma usado por composer, energy y
+  counterpoint), `MAX_SUSTAIN_STEPS` (16, tope de hueco en duraciones de
+  composer y counterpoint), `buildBlockMap(ctx)` y `sectionAt(ctx, paso)`.
 - **Plan tonal (modulación por quintas)**: la pieza sigue un **arco compuesto
   de antemano** sobre el ciclo de quintas, calculado en `compose` a partir de
   la forma. Se sortea un sentido por pieza (bemoles más probable en escalas
@@ -83,7 +141,7 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
   la tonalidad base**. Las modulaciones solo caen en **fronteras de sección**,
   nunca en medio de un bloque. Cada sección guarda `fifthOffset` (quintas con
   signo) y `keyOffset` (semitonos mod 12, posibles {0, 2, 3, 4, 5, 7, 8, 9,
-  10}); cada nota de `grid` y `stepEvents` copia el `keyOffset` de su sección
+  10}); cada nota del `grid` copia el `keyOffset` de su sección
   para que `retune` pueda re-mapear sin perderlo. La modulación es **suave**
   (`Generator.degreeToMidiInKey`): la nota se calcula en la tonalidad base y
   solo se altera ±1 semitono si no pertenece a la escala transportada,
@@ -107,15 +165,20 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
    al hueco hasta la siguiente nota (legato como máximo, factor 0.95 al disparar).
 6. **`retune` no regenera**: cambiar escala/tonalidad re-mapea los `degree`
    guardados a MIDI en la pieza existente, incluso durante la reproducción. Por
-   eso `grid` y `stepEvents` conservan `degree` y `keyOffset` junto a `midi`.
+   eso cada celda del `grid` conserva `degree` y `keyOffset` junto a `midi`;
+   `retune` solo recorre el `grid` y `stepEvents` lo ve porque referencia esas
+   mismas celdas (no copiar campos de la celda en los eventos).
 7. **Misma letra de forma = mismo material**: las secciones "A" comparten spec
    (`specByLetter`); no re-sortear por aparición. La tonalidad sí puede diferir
    entre apariciones (depende de la posición en la pieza, no de la letra). El
    humanizador introduce diferencias de superficie entre apariciones (notas
    caídas, adornos, respiraciones): es deliberado, el spec sigue compartido.
-8. **El tempo es único y solo lo cambia el usuario** (slider en tiempo real).
-   Ningún pase generativo o de humanización debe tocar `Transport.bpm` ni
-   desplazar notas en el tiempo (nada de rubato, swing ni micro-timing).
+8. **El tempo es único por pieza y solo lo cambia el usuario** (slider en
+   tiempo real). La única excepción es el «azar» de tempo, que `App.generate`
+   sortea una vez al generar y escribe en ese mismo slider, antes de que suene
+   la pieza. Ningún pase generativo o de humanización debe tocar
+   `Transport.bpm` ni desplazar notas en el tiempo (nada de rubato, swing ni
+   micro-timing).
 9. **La humanización trabaja en grados, nunca en MIDI directo**: toda nota que
    `Humanizer` añade o altera escribe `degree`/`keyOffset` y deriva `midi` de
    ellos, para que `retune` siga funcionando. Conserva el `motifIndex` del
@@ -130,17 +193,28 @@ forma (`generateForm`) → pieza (`Composer.compose`) → render
    azar (misma entrada → mismas correcciones, así la recapitulación sigue
    literal), no añade, quita ni desplaza notas en el tiempo (los huecos entre
    notas no cambian), trabaja en grados como el humanizador, e ignora las notas
-   casi inaudibles (velocity ≤ 0.18). Garantiza: en tiempo fuerte (paso múltiplo
+   casi inaudibles (velocity ≤ `GHOST_VELOCITY`, 0.18). Garantiza: en tiempo fuerte (paso múltiplo
    de 4) ninguna pareja de notas audibles simultáneas es disonante dura. La
    clasificación por distancia de grados es estable frente a `retune` entre
    escalas del mismo largo; el chequeo de tritono (semitonos) puede variar tras
    un retune en vivo — se acepta.
-8. **`Tone.start()` requiere gesto del usuario**: solo se llama desde Play
-   (`AudioEngine.init`).
+11. **`Tone.start()` requiere gesto del usuario**: se llama desde Play
+   (`AudioEngine.init`). La única excepción es el arranque del modo kiosco,
+   que lo intenta al cargar sin esperar respuesta y comprueba
+   `AudioEngine.isRunning()`. Solo funciona si la política de autoplay lo
+   permite; si no, espera el primer gesto.
 
 ## Convenciones
 
 - Comentarios y textos de UI en **español**; nombres de código en inglés.
+- Estética «instrumento»: los colores y tipografías viven como tokens en
+  `:root` de `css/style.css` (negro casi neutro, un único acento ámbar
+  `--accent` para lo accionable/activo y la recapitulación, rojo `--live` solo
+  para el cursor; Inter para texto, JetBrains Mono para cifras y etiquetas).
+  No escribir colores sueltos en el CSS; los lienzos (`visualizer.js`,
+  `visualizer3d.js`) repiten esos valores en constantes propias. Los sliders
+  pintan su tramo activo con `--from`/`--to`, que sincroniza `App` en cada
+  `input` y al crearse (bipolar si el mínimo es negativo).
 - Comentarios solo para restricciones no evidentes en el código (estilo actual).
 - Aleatoriedad vía `Math.random()` directo y `Generator.pickRandom`; no hay
   semilla/seed (si se añade, centralizar el RNG).

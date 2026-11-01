@@ -6,29 +6,13 @@ const Humanizer = (() => {
     return Generator.degreeToMidiInKey(degree, ctx.scale, ctx.key, keyOffset);
   }
 
-  // Mapa pista×paso -> marcador de bloque, para saber a qué bloque pertenece
-  // cada nota; los pases no mueven bloques, así que sigue válido tras mutar
-  function buildBlockMap(ctx) {
-    const map = Array.from({ length: ctx.numTracks }, () => new Array(ctx.totalSteps).fill(null));
-    for (const marker of ctx.blockMarkers) {
-      for (let s = marker.startStep; s < marker.startStep + marker.lengthSteps; s++) {
-        map[marker.trackIndex][s] = marker;
-      }
-    }
-    return map;
-  }
-
-  function sectionAt(ctx, step) {
-    return ctx.sections.find(sec => step >= sec.startStep && step < sec.startStep + sec.lengthSteps);
-  }
-
   // Las repeticiones de un bloque se van "gastando": a partir de la segunda,
   // alguna nota cae, se vuelve fantasma o gana un mordente (nota vecina breve
   // justo antes). La primera pasada siempre suena limpia; la recapitulación
   // literal no se toca para no diluir el retorno de la célula
   function mutateRepetitions(ctx) {
     for (const marker of ctx.blockMarkers) {
-      const section = sectionAt(ctx, marker.startStep);
+      const section = Generator.sectionAt(ctx, marker.startStep);
       if (section && section.recap && marker.lengthSteps === section.lengthSteps) continue;
       const row = ctx.grid[marker.trackIndex];
       const reps = marker.lengthSteps / ctx.cellLength;
@@ -164,7 +148,7 @@ const Humanizer = (() => {
   // y quita notas, así que los huecos cambian). Solo escribe grados y deja que
   // midi se derive de ellos, para que retune siga funcionando en vivo
   function humanize(ctx) {
-    const blockMap = buildBlockMap(ctx);
+    const blockMap = Generator.buildBlockMap(ctx);
     mutateRepetitions(ctx);
     addPassingTones(ctx, blockMap);
     shapeArticulation(ctx, blockMap);

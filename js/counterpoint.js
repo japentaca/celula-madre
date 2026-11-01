@@ -4,11 +4,10 @@ const Counterpoint = (() => {
   // letra reciban las mismas correcciones y la recapitulación siga literal
   const INTENSITY = 1;
 
-  // Debe coincidir con el cálculo de duraciones del compositor
-  const MAX_SUSTAIN_STEPS = 16;
-
-  // Velocity a la que se apaga una nota disonante que no pudo resolverse
-  const GHOST_VELOCITY = 0.18;
+  // GHOST_VELOCITY: velocity a la que se apaga una disonancia que no pudo
+  // resolverse. MAX_SUSTAIN_STEPS: el mismo tope que usa el compositor al
+  // calcular duraciones
+  const { GHOST_VELOCITY, MAX_SUSTAIN_STEPS } = Generator;
 
   function midiFor(ctx, degree, keyOffset) {
     return Generator.degreeToMidiInKey(degree, ctx.scale, ctx.key, keyOffset);

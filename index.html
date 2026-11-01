@@ -5,36 +5,66 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Música Generativa Algorítmica</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <header id="topbar">
-    <div class="topbar-group">
-      <button id="btn-generate">Generar</button>
-      <button id="btn-play">Play</button>
-      <button id="btn-stop">Stop</button>
+    <div class="brand" title="Música generativa algorítmica">
+      <span class="brand-led" aria-hidden="true"></span>
+      <span class="brand-name">binario</span>
     </div>
-    <div class="topbar-group">
-      <label>Tempo</label>
+
+    <div class="transport">
+      <button id="btn-play" class="btn-play" title="Reproducir / pausar (Espacio)" aria-label="Reproducir o pausar">
+        <svg class="ico-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4L13 8z"/></svg>
+        <svg class="ico-pause" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3h3v10H4zM9 3h3v10H9z"/></svg>
+      </button>
+      <button id="btn-stop" class="btn-icon" title="Detener y volver al inicio" aria-label="Detener">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4h8v8H4z"/></svg>
+      </button>
+      <button id="btn-generate" class="btn-generate" title="Componer una pieza nueva">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.6 6.2A6 6 0 1 0 14 9h-1.6a4.5 4.5 0 1 1-.6-3.3L9.6 7.8H14V3.4z"/></svg>
+        Generar
+      </button>
+    </div>
+
+    <div class="tempo" title="Tempo (negras por minuto); se aplica en vivo">
+      <label for="slider-tempo" class="tempo-label"><span class="tempo-note">♩</span>=</label>
       <input type="range" id="slider-tempo" min="5" max="150" value="120">
-      <span id="val-tempo">120</span>
+      <span id="val-tempo" class="readout">120</span>
     </div>
-    <div class="topbar-group">
-      <button popovertarget="dlg-generation" class="dialog-btn">Generación ▾</button>
-      <button popovertarget="dlg-effects" class="dialog-btn">Efectos ▾</button>
-      <button popovertarget="dlg-output" class="dialog-btn">Salida ▾</button>
-    </div>
-    <div class="topbar-group">
-      <label>Vista</label>
+
+    <div class="topbar-fill"></div>
+
+    <nav class="menus" aria-label="Ajustes">
+      <button popovertarget="dlg-generation" class="dialog-btn">Generación</button>
+      <button popovertarget="dlg-effects" class="dialog-btn">Efectos</button>
+      <button popovertarget="dlg-output" class="dialog-btn">Salida</button>
+    </nav>
+
+    <div class="view-pick">
+      <label for="select-view">Vista</label>
       <select id="select-view" title="Visualización de la grilla: piano roll 2D, ciudad de notas, túnel helicoidal (una vuelta = una célula), terreno orgánico o constelación de partículas">
-        <option value="2d">2D</option>
-        <option value="city">3D Ciudad</option>
-        <option value="tunnel">3D Túnel</option>
-        <option value="terrain">3D Terreno</option>
-        <option value="stars">3D Constelación</option>
+        <option value="2d">Piano roll</option>
+        <option value="city">Ciudad</option>
+        <option value="tunnel">Túnel</option>
+        <option value="terrain">Terreno</option>
+        <option value="stars">Constelación</option>
       </select>
     </div>
   </header>
+
+  <section id="piece-bar" aria-label="Pieza actual">
+    <div class="piece-meta">
+      <span class="piece-key" id="piece-key">—</span>
+      <span class="piece-facts" id="piece-facts"></span>
+      <span class="piece-time readout" id="piece-time">0:00 / 0:00</span>
+    </div>
+    <div class="section-bar" id="section-bar" title="Secciones de la forma; clic para saltar a una"></div>
+  </section>
 
   <div id="dlg-generation" class="dialog" popover>
     <div class="dialog-header">
@@ -42,15 +72,40 @@
       <button class="dialog-close" popovertarget="dlg-generation" popovertargetaction="hide">✕</button>
     </div>
     <div class="dialog-body">
-      <div class="dialog-row">
+      <div class="dialog-row rand-swap">
         <label>Pistas</label>
-        <input type="range" id="slider-tracks" min="1" max="8" value="4">
+        <div class="rand-slot">
+          <input type="range" id="slider-tracks" class="single" min="1" max="8" value="4">
+          <div class="range2">
+            <input type="range" id="slider-tracks-min" min="1" max="8" value="2" aria-label="Mínimo de pistas">
+            <input type="range" id="slider-tracks-max" min="1" max="8" value="6" aria-label="Máximo de pistas">
+          </div>
+        </div>
         <span class="dialog-val" id="val-tracks">4</span>
+        <input type="checkbox" class="rand-toggle" id="checkbox-tracks-random" title="Sortear el número de pistas en cada generación dentro del rango" aria-label="Pistas al azar">
+      </div>
+      <div class="dialog-row rand-swap">
+        <label title="Duración aproximada de cada pieza en minutos, al tempo con que se genera; células y repeticiones son potencias de 2, así que la real se desvía hasta un ~10%">Duración</label>
+        <div class="rand-slot">
+          <input type="range" id="slider-duration" class="single" min="1" max="20" value="4">
+          <div class="range2">
+            <input type="range" id="slider-duration-min" min="1" max="20" value="3" aria-label="Duración mínima (minutos)">
+            <input type="range" id="slider-duration-max" min="1" max="20" value="8" aria-label="Duración máxima (minutos)">
+          </div>
+        </div>
+        <span class="dialog-val" id="val-duration">4 min</span>
+        <input type="checkbox" class="rand-toggle" id="checkbox-duration-random" title="Sortear la duración en cada generación dentro del rango" aria-label="Duración al azar">
       </div>
       <div class="dialog-row">
-        <label>Duración</label>
-        <input type="range" id="slider-duration" min="1" max="8" value="4">
-        <span class="dialog-val" id="val-duration">4</span>
+        <label title="Con «azar» activo, cada generación sortea el tempo dentro de este rango y lo fija en el slider de la barra superior; si no, manda ese slider">Tempo</label>
+        <div class="rand-slot">
+          <div class="range2">
+            <input type="range" id="slider-tempo-min" min="5" max="150" value="60" aria-label="Tempo mínimo">
+            <input type="range" id="slider-tempo-max" min="5" max="150" value="90" aria-label="Tempo máximo">
+          </div>
+        </div>
+        <span class="dialog-val" id="val-tempo-range">60–90</span>
+        <input type="checkbox" class="rand-toggle" id="checkbox-tempo-random" title="Sortear el tempo en cada generación dentro del rango" aria-label="Tempo al azar">
       </div>
       <div class="dialog-row">
         <label title="Algoritmos de contorno melódico permitidos; sin selección se elige al azar entre todos">Contorno</label>
@@ -90,7 +145,8 @@
       <div class="dialog-row">
         <label>Escala</label>
         <select id="select-scale">
-          <option value="major">Mayor</option>
+          <option value="random">Aleatoria</option>
+          <option value="major" selected>Mayor</option>
           <option value="minor">Menor</option>
           <option value="pentatonic">Pentatónica</option>
           <option value="dorian">Doria</option>
@@ -102,7 +158,8 @@
       <div class="dialog-row">
         <label>Tonalidad</label>
         <select id="select-key">
-          <option value="0">C</option>
+          <option value="random">Aleatoria</option>
+          <option value="0" selected>C</option>
           <option value="1">C#</option>
           <option value="2">D</option>
           <option value="3">D#</option>
@@ -168,16 +225,28 @@
         <span class="dialog-val"></span>
       </div>
       <div class="dialog-row">
-        <label>Auto-generar</label>
+        <label title="Al terminar una pieza, componer otra y seguir sonando">Auto-generar</label>
         <input type="checkbox" id="checkbox-autogen" checked>
         <span class="dialog-val"></span>
       </div>
       <div class="dialog-row">
-        <label>Auto-reinicio</label>
+        <label title="Al terminar una pieza, volver a tocarla desde el principio (si Auto-generar está apagado)">Auto-reinicio</label>
         <input type="checkbox" id="checkbox-autorestart">
         <span class="dialog-val"></span>
       </div>
+      <div class="dialog-row">
+        <label title="Reproducción continua desatendida: arranca sola al cargar (o con el primer toque si el navegador lo exige), pantalla completa, pantalla siempre encendida y la interfaz se oculta tras unos segundos sin actividad. Sigue con piezas nuevas aunque Auto-generar esté apagado (salvo Auto-reinicio)">Modo kiosco</label>
+        <input type="checkbox" id="checkbox-kiosk">
+        <span class="dialog-val"></span>
+      </div>
     </div>
+  </div>
+  <!-- Modo kiosco sin permiso de autoplay: el audio espera el primer gesto -->
+  <div id="kiosk-start" class="kiosk-start" hidden>
+    <span class="kiosk-start-ring" aria-hidden="true">
+      <svg viewBox="0 0 16 16"><path d="M4.5 2.8v10.4L13 8z"/></svg>
+    </span>
+    <span class="kiosk-start-text">Toca para comenzar</span>
   </div>
   <main id="workspace">
     <div id="grid-container">

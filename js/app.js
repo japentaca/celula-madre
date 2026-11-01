@@ -5,10 +5,12 @@ const App = (() => {
     trackSettings: [],
     // Preset efectivo de cada pista en la pieza actual (resuelto cuando la elección es aleatoria)
     resolvedPresets: [],
-    // Vista activa de la grilla ('2d' | 'city' | 'tunnel') y último paso del
+    // Vista activa de la grilla ('2d' | 'city' | 'tunnel' | 'terrain' | 'stars') y último paso del
     // cursor, para reponerlo al conmutar de vista en plena reproducción
     view: '2d',
-    cursorStep: -1
+    cursorStep: -1,
+    // Arranque diferido de la siguiente pieza (respiro entre piezas)
+    nextPieceTimer: null
   };
 
   // ---- Despacho de visualización: todas las llamadas van a la vista activa.
@@ -21,6 +23,13 @@ const App = (() => {
 
   function vizRender() {
     if (state.piece) viz().renderPiece(state.piece);
+  }
+
+  // Re-render de la pieza actual conservando el cursor: renderPiece lo borra
+  // y en pausa no llegaría otro paso que lo repusiera
+  function vizRefresh() {
+    vizRender();
+    if (state.piece && state.cursorStep >= 0) viz().setCursor(state.cursorStep);
   }
 
   function setView(view) {
@@ -43,8 +52,7 @@ const App = (() => {
       }
       Visualizer3D.setActive(is3d);
     }
-    vizRender();
-    if (state.cursorStep >= 0) viz().setCursor(state.cursorStep);
+    vizRefresh();
     scheduleSave();
   }
 
@@ -118,12 +126,23 @@ const App = (() => {
     setControl('slider-tempo', ui.tempo, 'input');
     setControl('slider-tracks', ui.numTracks, 'input');
     setControl('slider-duration', ui.duration, 'input');
+    // Rangos de azar: cada tapa empuja a la otra, así que restaurarlas en
+    // cualquier orden deja el par guardado tal cual
+    for (const name of RANDOM_RANGES) {
+      const range = ui[`${name}Range`];
+      if (Array.isArray(range)) {
+        setControl(`slider-${name}-min`, range[0], 'input');
+        setControl(`slider-${name}-max`, range[1], 'input');
+      }
+      setControl(`checkbox-${name}-random`, ui[`${name}Random`], 'change');
+    }
     setControl('select-preset', ui.preset, 'change');
     setControl('select-scale', ui.scale, 'change');
     setControl('select-key', ui.key, 'change');
     setControl('select-form', ui.formChoice, 'change');
     setControl('checkbox-autogen', ui.autogen, 'change');
     setControl('checkbox-autorestart', ui.autorestart, 'change');
+    setControl('checkbox-kiosk', ui.kiosk, 'change');
     setControl('checkbox-audio', saved.audioEnabled, 'change');
     // compat: sesiones guardadas antes del selector de vista usaban viz3d bool
     const savedView = ui.view || (ui.viz3d ? 'city' : '2d');
@@ -227,27 +246,81 @@ const App = (() => {
     return -maxSpread + (2 * maxSpread * trackIndex) / (numTracks - 1);
   }
 
+  // Parámetros que pueden sortearse en cada generación dentro de un rango
+  // (interruptor «azar» del diálogo Generación)
+  const RANDOM_RANGES = ['tracks', 'duration', 'tempo'];
+
+  function readRange(name) {
+    return [`slider-${name}-min`, `slider-${name}-max`].map(id => parseInt(document.getElementById(id).value));
+  }
+
   function getUIState() {
-    return {
+    const ui = {
       tempo: parseInt(document.getElementById('slider-tempo').value),
       numTracks: parseInt(document.getElementById('slider-tracks').value),
       duration: parseInt(document.getElementById('slider-duration').value),
       preset: document.getElementById('select-preset').value,
       scale: document.getElementById('select-scale').value,
       contours: getSelectedContours(),
-      key: parseInt(document.getElementById('select-key').value),
+      // 'random' o semitonos 0-11; se resuelve al generar (Generator.resolveKey)
+      key: (v => (v === 'random' ? v : parseInt(v)))(document.getElementById('select-key').value),
       formChoice: document.getElementById('select-form').value,
       autogen: document.getElementById('checkbox-autogen').checked,
       autorestart: document.getElementById('checkbox-autorestart').checked,
+      kiosk: document.getElementById('checkbox-kiosk').checked,
       view: state.view
     };
+    for (const name of RANDOM_RANGES) {
+      ui[`${name}Random`] = document.getElementById(`checkbox-${name}-random`).checked;
+      ui[`${name}Range`] = readRange(name);
+    }
+    return ui;
   }
+
+  const randomInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+  const rangeText = ([min, max], unit = '') => (min === max ? String(min) : `${min}–${max}`) + unit;
 
   function updateLabels() {
     const ui = getUIState();
     document.getElementById('val-tempo').textContent = ui.tempo;
-    document.getElementById('val-tracks').textContent = ui.numTracks;
-    document.getElementById('val-duration').textContent = ui.duration;
+    document.getElementById('val-tracks').textContent = ui.tracksRandom ? rangeText(ui.tracksRange) : ui.numTracks;
+    document.getElementById('val-duration').textContent = ui.durationRandom ? rangeText(ui.durationRange, ' min') : `${ui.duration} min`;
+    document.getElementById('val-tempo-range').textContent = rangeText(ui.tempoRange);
+  }
+
+  // Rango doble (dos sliders superpuestos): cada tapa empuja a la otra en vez
+  // de cruzarla, y el contenedor pinta el tramo entre ambas
+  function setupRangePair(name) {
+    const lo = document.getElementById(`slider-${name}-min`);
+    const hi = document.getElementById(`slider-${name}-max`);
+    const box = lo.parentElement;
+    const sync = () => {
+      const min = parseFloat(lo.min);
+      const span = parseFloat(lo.max) - min || 1;
+      box.style.setProperty('--from', `${(100 * (lo.value - min)) / span}%`);
+      box.style.setProperty('--to', `${(100 * (hi.value - min)) / span}%`);
+      // con las dos tapas juntas en el tope solo se podría arrastrar la de
+      // arriba hacia la izquierda: ahí la del mínimo pasa por encima
+      lo.style.zIndex = parseFloat(lo.value) >= parseFloat(lo.max) ? '2' : '';
+      updateLabels();
+    };
+    lo.addEventListener('input', () => {
+      if (parseFloat(lo.value) > parseFloat(hi.value)) hi.value = lo.value;
+      sync();
+    });
+    hi.addEventListener('input', () => {
+      if (parseFloat(hi.value) < parseFloat(lo.value)) lo.value = hi.value;
+      sync();
+    });
+    sync();
+
+    const toggle = document.getElementById(`checkbox-${name}-random`);
+    const applyToggle = () => {
+      toggle.closest('.dialog-row').classList.toggle('is-random', toggle.checked);
+      updateLabels();
+    };
+    toggle.addEventListener('change', applyToggle);
+    applyToggle();
   }
 
   function getSelectedContours() {
@@ -310,6 +383,9 @@ const App = (() => {
     sliderTempo.addEventListener('input', () => {
       updateLabels();
       AudioEngine.setTempo(parseInt(sliderTempo.value));
+      // la duración en segundos depende del tempo
+      lastShownSecond = -1;
+      updatePosition(Composer.getIsPlaying() || state.cursorStep >= 0 ? state.cursorStep : -1);
     });
 
     const sliderDelayDiv = document.getElementById('slider-delaydiv');
@@ -354,33 +430,38 @@ const App = (() => {
 
     document.getElementById('slider-tracks').addEventListener('input', updateLabels);
     document.getElementById('slider-duration').addEventListener('input', updateLabels);
+    RANDOM_RANGES.forEach(setupRangePair);
 
     document.getElementById('btn-generate').addEventListener('click', generate);
-    document.getElementById('btn-play').addEventListener('click', play);
+    document.getElementById('btn-play').addEventListener('click', togglePlay);
     document.getElementById('btn-stop').addEventListener('click', stop);
     document.getElementById('select-view').addEventListener('change', e => setView(e.target.value));
 
-    // Tonalidad y escala se aplican en vivo sobre la pieza actual
+    // Tonalidad y escala se aplican en vivo sobre la pieza actual. Elegir
+    // "Aleatoria" no toca la pieza en curso: el sorteo ocurre al generar
     const retuneCurrent = () => {
       if (!state.piece) return;
       const ui = getUIState();
-      Composer.retune(ui.scale, ui.key);
-      vizRender();
+      const scale = ui.scale === 'random' ? state.piece.scale : ui.scale;
+      const key = ui.key === 'random' ? state.piece.key : ui.key;
+      if (scale === state.piece.scale && key === state.piece.key) return;
+      Composer.retune(scale, key);
+      updateRandomTonalityLabels();
+      renderPieceBar();
+      vizRefresh();
     };
     document.getElementById('select-key').addEventListener('change', retuneCurrent);
     document.getElementById('select-scale').addEventListener('change', retuneCurrent);
 
-    // La vista 3D se redimensiona sola (ResizeObserver); el canvas 2D no
+    // La vista 3D se redimensiona sola (ResizeObserver); el canvas 2D no.
+    // Debounce: cada re-render recrea el offscreen y redibuja la pieza entera
+    let resizeTimer = null;
     window.addEventListener('resize', () => {
-      if (state.view === '2d' && state.piece) Visualizer.renderPiece(state.piece);
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (state.view === '2d') vizRefresh();
+      }, 120);
     });
-  }
-
-  // Slider de duración (1..8) -> largo de célula: mayor potencia de 2 <= duración*16
-  function cellLengthFromDuration(duration) {
-    const target = duration * 16;
-    const lengths = Generator.CELL_LENGTHS.slice().reverse();
-    return lengths.find(l => l <= target) || Generator.CELL_LENGTHS[0];
   }
 
   function ensureTrackSettings(numTracks) {
@@ -423,63 +504,97 @@ const App = (() => {
     if (Composer.getIsPlaying()) stop();
 
     const ui = getUIState();
-    AudioEngine.setTempo(ui.tempo);
-    ensureTrackSettings(ui.numTracks);
-
-    const cellLength = cellLengthFromDuration(ui.duration);
-
-    const motherCell = Generator.generateMotherCell(cellLength, ui.contours);
-    // al menos tantas variaciones como pistas para que nunca falte material distinto
-    const motifs = Generator.generateMotifs(motherCell, Math.max(4, ui.numTracks), ui.contours);
+    // Parámetros con «azar»: se sortean aquí, una vez por pieza. El tempo
+    // sorteado se escribe en el slider de la barra superior, así que el
+    // usuario lo ve y puede seguir cambiándolo en vivo (invariante 8)
+    const numTracks = ui.tracksRandom ? randomInt(...ui.tracksRange) : ui.numTracks;
+    const minutes = ui.durationRandom ? randomInt(...ui.durationRange) : ui.duration;
+    const bpm = ui.tempoRandom ? randomInt(...ui.tempoRange) : ui.tempo;
+    if (ui.tempoRandom) setControl('slider-tempo', bpm, 'input');
+    else AudioEngine.setTempo(bpm);
+    ensureTrackSettings(numTracks);
 
     const formStr = Generator.generateForm(ui.formChoice);
     const formParts = Generator.parseForm(formStr);
 
+    // Duración objetivo -> largo de célula y repeticiones por letra. Un paso es
+    // una semicorchea: a ♩=bpm suenan bpm*4 pasos por minuto. Si luego se mueve
+    // el tempo en vivo, la duración en minutos cambia con él
+    const plan = Composer.planDuration(formParts, minutes * bpm * 4);
+    const cellLength = plan.cellLength;
+
+    const motherCell = Generator.generateMotherCell(cellLength, ui.contours);
+    // al menos tantas variaciones como pistas para que nunca falte material distinto
+    const motifs = Generator.generateMotifs(motherCell, Math.max(4, numTracks), ui.contours);
+
     const configs = [];
     const resolved = [];
-    for (let t = 0; t < ui.numTracks; t++) {
+    for (let t = 0; t < numTracks; t++) {
       const preset = resolvePreset(t, ui);
       const settings = state.trackSettings[t];
       // el reparto estéreo se recalcula salvo que el usuario haya movido el paneo a mano
-      if (!settings.panTouched) settings.pan = spreadPan(t, ui.numTracks);
+      if (!settings.panTouched) settings.pan = spreadPan(t, numTracks);
       resolved.push(preset);
       configs.push({ preset: toEnginePreset(t, preset), volume: settings.volume, reverb: settings.reverb, delay: settings.delay, pan: settings.pan });
     }
     state.resolvedPresets = resolved;
     AudioEngine.setupTracks(configs);
-    MidiEngine.setTrackChannels(state.trackSettings.slice(0, ui.numTracks).map(s => s.midiChannel));
+    MidiEngine.setTrackChannels(state.trackSettings.slice(0, numTracks).map(s => s.midiChannel));
 
     state.piece = Composer.compose({
-      numTracks: ui.numTracks,
+      numTracks,
       motifs,
       formParts,
       cellLength,
-      scale: ui.scale,
-      key: ui.key
+      scale: Generator.resolveScale(ui.scale),
+      key: Generator.resolveKey(ui.key),
+      repeatsByLetter: plan.repeats
     });
+    updateRandomTonalityLabels();
+    // El cursor de una pausa previa no vale para la pieza nueva (compose
+    // rebobina a 0); si no, vizRefresh (retune, resize, vista) lo repondría
+    state.cursorStep = -1;
     state.piece.contour = motherCell.contour;
     const extraContours = [...new Set(motifs.slice(1).map(m => m.contour).filter(c => c !== motherCell.contour))];
     const contourInfo = extraContours.length ? `${motherCell.contour} (variaciones: ${extraContours.join(', ')})` : motherCell.contour;
     const tonalPlan = state.piece.sections.map(s => s.fifthOffset).join(' → ');
-    console.log(`Pieza generada — contorno: ${contourInfo}, forma: ${formStr}, plan tonal (quintas): ${tonalPlan}`);
+    console.log(`Pieza generada — ${numTracks} pistas, ${formatTime(state.piece.totalSteps * 15 / bpm)} (objetivo ${minutes} min), célula de ${cellLength} pasos, ♩=${bpm}, contorno: ${contourInfo}, forma: ${formStr}, ${optionText('select-key', state.piece.key)} ${optionText('select-scale', state.piece.scale)}, plan tonal (quintas): ${tonalPlan}`);
 
+    lastShownSecond = -1;
+    renderPieceBar();
     vizRender();
-    buildTrackPanel(ui.numTracks);
-    SynthEditor.ensureValid(ui.numTracks);
+    buildTrackPanel(numTracks);
+    SynthEditor.ensureValid(numTracks);
     // los presets sorteados forman parte de lo que se restaura al recargar
     scheduleSave();
   }
 
+  function optionText(selectId, value) {
+    const opt = document.querySelector(`#${selectId} option[value="${value}"]`);
+    return opt ? opt.textContent : String(value);
+  }
+
+  // La opción "Aleatoria" de escala y tonalidad muestra lo que suena ahora,
+  // como el selector de preset de cada pista
+  function updateRandomTonalityLabels() {
+    const piece = state.piece;
+    for (const [id, value] of [['select-scale', piece && piece.scale], ['select-key', piece && piece.key]]) {
+      const opt = document.querySelector(`#${id} option[value="random"]`);
+      if (opt) opt.textContent = piece ? `Aleatoria (${optionText(id, value)})` : 'Aleatoria';
+    }
+  }
+
   function randomOptionLabel(trackIndex) {
     const resolved = state.resolvedPresets[trackIndex];
-    return resolved ? `Aleatorio (${displayName(resolved)})` : 'Aleatorio';
+    // corto para que quepa en la tira de la pista
+    return resolved ? `${displayName(resolved)} · azar` : 'Aleatorio';
   }
 
   function buildTrackPanel(numTracks) {
     const panel = document.getElementById('track-panel');
     if (!panel) return;
 
-    let html = '<div class="panel-spacer">Pistas</div>';
+    let html = `<div class="panel-spacer"><span>Pistas</span><span>${numTracks}</span></div>`;
     for (let t = 0; t < numTracks; t++) {
       const settings = state.trackSettings[t];
       const userIds = SynthEditor.getUserPresetNames().map(n => SynthEditor.USER_PREFIX + n);
@@ -495,25 +610,23 @@ const App = (() => {
       html += `
         <div class="track-strip" data-track="${t}">
           <div class="strip-row">
-            <span class="strip-label">T${t + 1}</span>
-            <select class="strip-preset">${options}</select>
-            <button class="strip-edit" title="Editor de sinte y efectos">✎</button>
-            <span class="mini-label" title="Canal MIDI de la pista">C</span>
-            <select class="strip-chan">${chanOptions}</select>
-            <span class="mini-label" title="Paneo (izquierda-derecha)">P</span>
-            <input class="strip-pan" type="range" min="-1" max="1" step="0.01" value="${settings.pan}">
+            <span class="strip-num">${String(t + 1).padStart(2, '0')}</span>
+            <select class="strip-preset" title="Instrumento de la pista">${options}</select>
+            <button class="strip-edit" title="Editor de sinte y efectos" aria-label="Editar sinte de la pista ${t + 1}">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.3 1.9l2.8 2.8-8.6 8.6H2.7v-2.8z"/></svg>
+            </button>
+            <label class="strip-chan-wrap" title="Canal MIDI de la pista">ch<select class="strip-chan">${chanOptions}</select></label>
           </div>
-          <div class="strip-row">
-            <span class="mini-label" title="Volumen">V</span>
-            <input class="strip-vol" type="range" min="0" max="1" step="0.01" value="${settings.volume}">
-            <span class="mini-label" title="Envío a reverb">R</span>
-            <input class="strip-rev" type="range" min="0" max="1" step="0.01" value="${settings.reverb}">
-            <span class="mini-label" title="Envío a delay">D</span>
-            <input class="strip-del" type="range" min="0" max="1" step="0.01" value="${settings.delay}">
+          <div class="strip-faders">
+            <label class="fader" title="Volumen"><span>vol</span><input class="strip-vol" type="range" min="0" max="1" step="0.01" value="${settings.volume}"></label>
+            <label class="fader" title="Envío a reverb"><span>rev</span><input class="strip-rev" type="range" min="0" max="1" step="0.01" value="${settings.reverb}"></label>
+            <label class="fader" title="Envío a delay"><span>dly</span><input class="strip-del" type="range" min="0" max="1" step="0.01" value="${settings.delay}"></label>
+            <label class="fader" title="Paneo (izquierda-derecha)"><span>pan</span><input class="strip-pan" type="range" min="-1" max="1" step="0.01" value="${settings.pan}"></label>
           </div>
         </div>`;
     }
     panel.innerHTML = html;
+    syncRangeFills(panel);
 
     panel.querySelectorAll('.track-strip').forEach(strip => {
       const t = parseInt(strip.dataset.track);
@@ -563,6 +676,14 @@ const App = (() => {
     });
   }
 
+  // Respiro entre una pieza y la siguiente (Auto-generar / Auto-reinicio / kiosco)
+  const PIECE_GAP_MS = 3000;
+
+  function cancelNextPiece() {
+    clearTimeout(state.nextPieceTimer);
+    state.nextPieceTimer = null;
+  }
+
   async function play() {
     await AudioEngine.init();
     if (!state.piece) generate();
@@ -572,30 +693,330 @@ const App = (() => {
       step => {
         state.cursorStep = step;
         viz().setCursor(step);
+        updatePosition(step);
       },
       () => {
         state.cursorStep = -1;
         viz().clearCursor();
+        setPlayingUI(false);
+        updatePosition(-1);
+        // El kiosco nunca se queda en silencio: sin Auto-generar ni
+        // Auto-reinicio también compone otra pieza
         const ui = getUIState();
-        if (ui.autorestart || ui.autogen) {
-          setTimeout(() => {
-            if (getUIState().autogen) generate();
-            play();
-          }, 600);
-        }
+        const regenerate = ui.autogen || (ui.kiosk && !ui.autorestart);
+        if (!regenerate && !ui.autorestart) return;
+        // Se compone ya, para que las pistas salientes se desvanezcan con su
+        // cola (AudioEngine.setupTracks) durante el respiro previo a la nueva
+        if (regenerate) generate();
+        cancelNextPiece();
+        state.nextPieceTimer = setTimeout(() => {
+          state.nextPieceTimer = null;
+          play();
+        }, PIECE_GAP_MS);
       }
     );
+    setPlayingUI(Composer.getIsPlaying());
   }
 
-  function stop() {
-    const wasPlaying = Composer.getIsPlaying();
+  // Pausa: conserva la posición y el cursor marca el punto de reanudación
+  function pause() {
+    cancelNextPiece();
     Composer.stop();
-    // En pausa el cursor queda marcando el punto de reanudación; el segundo
-    // stop (ya parado) rebobina a 0 y lo limpia
-    if (!wasPlaying) {
-      state.cursorStep = -1;
-      viz().clearCursor();
+    setPlayingUI(false);
+  }
+
+  function togglePlay() {
+    if (Composer.getIsPlaying()) pause();
+    else play();
+  }
+
+  // Detener: para y rebobina al inicio (Composer.stop pausa en marcha y
+  // rebobina estando parado, de ahí la doble llamada)
+  function stop() {
+    cancelNextPiece();
+    Composer.stop();
+    Composer.stop();
+    state.cursorStep = -1;
+    viz().clearCursor();
+    setPlayingUI(false);
+    updatePosition(-1);
+  }
+
+  function setPlayingUI(playing) {
+    document.body.classList.toggle('is-playing', playing);
+    const btn = document.getElementById('btn-play');
+    btn.setAttribute('aria-pressed', String(playing));
+    btn.title = playing ? 'Pausar (Espacio)' : 'Reproducir (Espacio)';
+    if (playing) document.getElementById('kiosk-start').hidden = true;
+  }
+
+  // Espacio = reproducir/pausar, salvo escribiendo o eligiendo en un control
+  function setupKeyboard() {
+    const typing = el => el && (el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' ||
+      (el.tagName === 'INPUT' && el.type !== 'range' && el.type !== 'checkbox'));
+    document.addEventListener('keydown', e => {
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+      if (e.code === 'KeyF') {
+        toggleFullscreen();
+        return;
+      }
+      if (e.code !== 'Space') return;
+      e.preventDefault();
+      togglePlay();
+    });
+    // un botón o interruptor con foco se activaría además en keyup
+    document.addEventListener('keyup', e => {
+      if (e.code === 'Space' && (e.target.tagName === 'BUTTON' || e.target.type === 'checkbox')) e.preventDefault();
+    });
+  }
+
+  // ---- Barra de la pieza: tonalidad, datos, tiempo y secciones ----
+
+  // Nombre de la tonalidad local de una sección (base + modulación por quintas)
+  function keyName(semitones) {
+    return optionText('select-key', ((semitones % 12) + 12) % 12);
+  }
+
+  function stepSeconds() {
+    return 60 / getUIState().tempo / 4;
+  }
+
+  function formatTime(seconds) {
+    const s = Math.max(0, Math.round(seconds));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  const capitalize = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+  function renderPieceBar() {
+    const piece = state.piece;
+    const keyEl = document.getElementById('piece-key');
+    const facts = document.getElementById('piece-facts');
+    const bar = document.getElementById('section-bar');
+    if (!piece) {
+      keyEl.textContent = '—';
+      facts.innerHTML = '';
+      bar.innerHTML = '';
+      return;
     }
+    keyEl.innerHTML = `${escapeHtml(keyName(piece.key))}<span class="scale-name">${escapeHtml(optionText('select-scale', piece.scale).toLowerCase())}</span>`;
+    const form = piece.sections.map(s => s.label).join('–');
+    facts.innerHTML = [
+      ['forma', form],
+      ['contorno', piece.contour ? capitalize(piece.contour) : '—'],
+      ['pistas', piece.numTracks],
+      ['célula', `${piece.cellLength} pasos`, 'fact-cell']
+    ].map(([label, value, cls]) => `<span class="${cls || ''}"><span class="fact-label">${label}</span><b>${escapeHtml(String(value))}</b></span>`).join('');
+
+    bar.innerHTML = piece.sections.map((s, i) => {
+      const local = keyName(piece.key + s.keyOffset);
+      const fifths = s.fifthOffset ? ` (${s.fifthOffset > 0 ? '+' : ''}${s.fifthOffset} ${Math.abs(s.fifthOffset) === 1 ? 'quinta' : 'quintas'})` : '';
+      const title = `Sección ${s.label} · ${s.totalRepeats} repeticiones · tonalidad ${local}${fifths}${s.recap ? ' · recapitulación' : ''}`;
+      return `<div class="sec${s.recap ? ' recap' : ''}" data-index="${i}" style="flex: ${s.lengthSteps} 1 0" title="${escapeHtml(title)}">` +
+        `<span class="sec-letter">${escapeHtml(s.label)}</span>` +
+        `<span class="sec-key${s.fifthOffset ? ' modulated' : ''}">${escapeHtml(local)}</span></div>`;
+    }).join('') + '<div class="section-fill"></div><div class="section-head"></div>';
+
+    updatePosition(Composer.getIsPlaying() || state.cursorStep >= 0 ? state.cursorStep : -1);
+  }
+
+  let lastShownSecond = -1;
+
+  // Posición de reproducción en la barra (step < 0: al inicio, sin cabezal)
+  function updatePosition(step) {
+    const piece = state.piece;
+    if (!piece) return;
+    const bar = document.getElementById('section-bar');
+    const at = Math.max(0, step);
+    const pct = `${(100 * at) / piece.totalSteps}%`;
+    const fill = bar.querySelector('.section-fill');
+    const head = bar.querySelector('.section-head');
+    if (fill) fill.style.width = pct;
+    if (head) head.style.left = pct;
+    bar.classList.toggle('has-head', step >= 0);
+
+    const current = step >= 0 ? piece.sections.findIndex(s => at >= s.startStep && at < s.startStep + s.lengthSteps) : -1;
+    bar.querySelectorAll('.sec').forEach((el, i) => el.classList.toggle('current', i === current));
+
+    const elapsed = Math.floor(at * stepSeconds());
+    if (step >= 0 && elapsed === lastShownSecond) return;
+    lastShownSecond = step >= 0 ? elapsed : -1;
+    document.getElementById('piece-time').innerHTML =
+      `<b>${formatTime(at * stepSeconds())}</b> / ${formatTime(piece.totalSteps * stepSeconds())}`;
+  }
+
+  function setupPieceBar() {
+    document.getElementById('section-bar').addEventListener('click', e => {
+      const sec = e.target.closest('.sec');
+      if (!sec || !state.piece) return;
+      const step = state.piece.sections[parseInt(sec.dataset.index)].startStep;
+      Composer.seek(step);
+      // en marcha el cursor lo mueve el próximo paso; en pausa se marca ya
+      if (!Composer.getIsPlaying()) {
+        state.cursorStep = step;
+        viz().setCursor(step);
+      }
+      lastShownSecond = -1;
+      updatePosition(step);
+    });
+  }
+
+  // ---- Faders: el tramo activo de cada slider lo pinta el CSS con
+  // --from/--to; bipolar (desde el centro) si el mínimo es negativo ----
+
+  function syncRangeFill(input) {
+    const min = input.min === '' ? 0 : parseFloat(input.min);
+    const max = input.max === '' ? 100 : parseFloat(input.max);
+    const span = max - min || 1;
+    const pos = (100 * (parseFloat(input.value) - min)) / span;
+    const zero = min < 0 && max > 0 ? (100 * -min) / span : 0;
+    input.style.setProperty('--from', `${Math.min(zero, pos)}%`);
+    input.style.setProperty('--to', `${Math.max(zero, pos)}%`);
+  }
+
+  function syncRangeFills(root) {
+    (root || document).querySelectorAll('input[type="range"]').forEach(syncRangeFill);
+  }
+
+  function setupRangeFills() {
+    document.addEventListener('input', e => {
+      if (e.target.type === 'range') syncRangeFill(e.target);
+    }, true);
+    // sliders creados después (editor de sintes) o con value fijado por código
+    let pending = false;
+    new MutationObserver(() => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(() => {
+        pending = false;
+        syncRangeFills();
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+    syncRangeFills();
+  }
+
+  // ---- Pantalla completa y modo kiosco ----
+
+  function requestFullscreen() {
+    const el = document.documentElement;
+    if (document.fullscreenElement || !el.requestFullscreen) return;
+    el.requestFullscreen().catch(() => { /* sin gesto o denegado */ });
+  }
+
+  // F = pantalla completa (fuera del kiosco también)
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else requestFullscreen();
+  }
+
+  const kioskOn = () => document.getElementById('checkbox-kiosk').checked;
+
+  // Pantalla siempre encendida mientras el kiosco esté activo. El navegador
+  // suelta el bloqueo al ocultarse la pestaña; se vuelve a pedir al mostrarse
+  let wakeLock = null;
+  let wakeLockPending = false;
+
+  async function updateWakeLock() {
+    const want = kioskOn() && document.visibilityState === 'visible';
+    if (want && !wakeLock && !wakeLockPending && navigator.wakeLock) {
+      wakeLockPending = true;
+      try {
+        const lock = await navigator.wakeLock.request('screen');
+        lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+        wakeLock = lock;
+      } catch (e) {
+        // denegado (ahorro de batería, política): la pantalla podrá apagarse
+      }
+      wakeLockPending = false;
+      // el kiosco pudo apagarse mientras se esperaba el bloqueo
+      if (!kioskOn()) updateWakeLock();
+    } else if (!want && wakeLock) {
+      const lock = wakeLock;
+      wakeLock = null;
+      lock.release().catch(() => {});
+    }
+  }
+
+  // Interfaz oculta tras IDLE_MS sin actividad (solo kiosco y sonando, sin
+  // diálogos abiertos); cualquier movimiento, toque o tecla la devuelve
+  const IDLE_MS = 4000;
+  let idleTimer = null;
+
+  function setIdle(idle) {
+    if (document.body.classList.contains('ui-idle') === idle) return;
+    document.body.classList.toggle('ui-idle', idle);
+    // el piano roll 2D no observa su contenedor (la vista 3D sí)
+    if (state.view === '2d') vizRefresh();
+  }
+
+  function pokeActivity() {
+    setIdle(false);
+    clearTimeout(idleTimer);
+    if (!kioskOn()) return;
+    idleTimer = setTimeout(() => {
+      if (kioskOn() && Composer.getIsPlaying() && !document.querySelector(':popover-open')) setIdle(true);
+      else pokeActivity();
+    }, IDLE_MS);
+  }
+
+  // Sin permiso de autoplay, el primer gesto en cualquier parte arranca el
+  // audio y pide pantalla completa (ambas cosas exigen gesto). Sobre un
+  // control solo se pide pantalla completa: el control hace lo suyo (▶ ya
+  // reproduce, y reproducir aquí además haría que su clic pausara)
+  function armFirstGesture() {
+    const onGesture = e => {
+      document.removeEventListener('pointerdown', onGesture, true);
+      document.removeEventListener('keydown', onGesture, true);
+      if (!kioskOn()) return;
+      requestFullscreen();
+      document.getElementById('kiosk-start').hidden = true;
+      const onControl = e.target.closest && e.target.closest('button, input, select, label, .sec, [popover]');
+      if (!onControl && !Composer.getIsPlaying()) play();
+    };
+    document.addEventListener('pointerdown', onGesture, true);
+    document.addEventListener('keydown', onGesture, true);
+  }
+
+  // Arranque al cargar con el kiosco activo: si la política de autoplay lo
+  // permite (p. ej. Chrome con --autoplay-policy=no-user-gesture-required)
+  // suena ya; si no, el contexto queda suspendido y se espera el primer gesto
+  // con un aviso a pantalla completa
+  function kioskBoot() {
+    if (!kioskOn()) return;
+    armFirstGesture();
+    AudioEngine.init(); // sin await: sin permiso de autoplay queda pendiente
+    setTimeout(() => {
+      if (!kioskOn() || Composer.getIsPlaying()) return;
+      if (AudioEngine.isRunning()) play();
+      else document.getElementById('kiosk-start').hidden = false;
+    }, 300);
+  }
+
+  function setupKiosk() {
+    const checkbox = document.getElementById('checkbox-kiosk');
+    checkbox.addEventListener('change', e => {
+      updateWakeLock();
+      pokeActivity();
+      // solo un clic real (no la restauración de ajustes) entra o sale del
+      // kiosco en el acto: pantalla completa y reproducción exigen gesto
+      if (!e.isTrusted) return;
+      if (checkbox.checked) {
+        requestFullscreen();
+        if (!Composer.getIsPlaying()) play();
+      } else {
+        document.getElementById('kiosk-start').hidden = true;
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      }
+    });
+    document.addEventListener('visibilitychange', updateWakeLock);
+    for (const type of ['pointerdown', 'keydown', 'wheel']) {
+      document.addEventListener(type, pokeActivity, { passive: true, capture: true });
+    }
+    // Chrome emite pointermove sin desplazamiento cuando la página cambia bajo
+    // un puntero quieto; no cuentan como actividad
+    document.addEventListener('pointermove', e => {
+      if (e.movementX || e.movementY) pokeActivity();
+    }, { passive: true, capture: true });
   }
 
   function setupSynthEditor() {
@@ -631,11 +1052,16 @@ const App = (() => {
   function init() {
     const saved = loadSettings();
     setupUI(saved);
+    setupKeyboard();
+    setupPieceBar();
     setupSynthEditor();
+    setupKiosk();
     restoreSettings(saved);
     updateLabels();
     Visualizer.init('grid-canvas');
     generate();
+    setupRangeFills();
+    kioskBoot();
     // Autosave global: cualquier input/change que burbujee (topbar, diálogos,
     // panel de pistas) reprograma el guardado. Se engancha tras restaurar para
     // no guardar en medio de la propia restauración; el editor de sintes pasa

@@ -5,8 +5,16 @@ const Composer = (() => {
   let currentStep = 0;
 
   const STEP = '16n';
-  // Repeticiones totales de célula por sección (potencias de 2)
+  // Repeticiones totales de célula por sección (potencias de 2) cuando no hay
+  // plan de duración (planDuration)
   const SECTION_REPEAT_CHOICES = [2, 4];
+  // Planes de duración aceptables: error relativo (en log) hasta este margen
+  // por encima del mejor; entre ellos se sortea para variar el largo de célula
+  const DURATION_TOLERANCE = 0.06;
+  // Más repeticiones que esto por sección suenan a bucle: entre los planes
+  // aceptables se prefieren los que no lo pasan y, si ninguno, los de célula
+  // más larga (piezas largas: células largas antes que muchas vueltas)
+  const REPEAT_SOFT_CAP = 16;
   // Límite del viaje por el ciclo de quintas: la tonalidad no se aleja más de
   // este número de quintas (en cualquiera de los dos sentidos) desde la base
   const MAX_FIFTH_STEPS = 4;
@@ -14,14 +22,14 @@ const Composer = (() => {
   // Compresión de dinámica al tocar (no altera la partitura): el rango audible
   // se estrecha hacia DYN_CENTER con razón DYN_RATIO (0.5 ≈ compresor 2:1)
   // para que las notas suaves no desaparezcan ni las fuertes golpeen. Las
-  // notas fantasma (velocity <= 0.18: disonancias apagadas por el contrapunto,
-  // ecos del humanizador) se dejan tal cual — su papel es ser casi inaudibles
+  // notas fantasma (velocity <= Generator.GHOST_VELOCITY: disonancias apagadas
+  // por el contrapunto, ecos del humanizador) se dejan tal cual — su papel es
+  // ser casi inaudibles
   const DYN_CENTER = 0.65;
   const DYN_RATIO = 0.5;
-  const GHOST_VELOCITY = 0.18;
 
   function shapeVelocity(v) {
-    if (v <= GHOST_VELOCITY) return v;
+    if (v <= Generator.GHOST_VELOCITY) return v;
     return Math.min(1, DYN_CENTER + (v - DYN_CENTER) * DYN_RATIO);
   }
 
@@ -81,8 +89,9 @@ const Composer = (() => {
     return blocks;
   }
 
-  function buildSectionSpec(numTracks, motifCount) {
-    const totalRepeats = SECTION_REPEAT_CHOICES[Math.floor(Math.random() * SECTION_REPEAT_CHOICES.length)];
+  function buildSectionSpec(numTracks, motifCount, fixedRepeats) {
+    const totalRepeats = fixedRepeats ||
+      SECTION_REPEAT_CHOICES[Math.floor(Math.random() * SECTION_REPEAT_CHOICES.length)];
     const slotUsage = Array.from({ length: totalRepeats }, () => new Set());
     const trackBlocks = [];
     for (let t = 0; t < numTracks; t++) {
@@ -95,15 +104,55 @@ const Composer = (() => {
     return { totalRepeats, trackBlocks };
   }
 
-  // opts: { numTracks, motifs, formParts, cellLength, scale, key }
+  // Plan de duración: elige el largo de célula y las repeticiones de cada
+  // letra de la forma para acercarse a targetSteps. Todo sigue siendo potencia
+  // de 2 (invariante 1), así que la duración real solo se aproxima. Prueba,
+  // para cada largo de célula, las repeticiones base/2, base y base*2 por letra
+  // (≤ 5 letras distintas → pocas centenas de combinaciones) y sortea entre
+  // las que quedan cerca del mejor ajuste.
+  // Devuelve { cellLength, repeats: { letra: n }, steps }
+  function planDuration(formParts, targetSteps) {
+    const counts = {};
+    for (const letter of formParts) counts[letter] = (counts[letter] || 0) + 1;
+    const letters = Object.keys(counts);
+    const plans = [];
+    for (const cellLength of Generator.CELL_LENGTHS) {
+      let base = 1;
+      while (cellLength * formParts.length * base * 2 <= targetSteps) base *= 2;
+      const choices = [base / 2, base, base * 2].filter(r => r >= 1);
+      const walk = (i, repeats, cells) => {
+        if (i === letters.length) {
+          const steps = cellLength * cells;
+          plans.push({ cellLength, repeats: { ...repeats }, steps, error: Math.abs(Math.log(steps / targetSteps)) });
+          return;
+        }
+        for (const r of choices) {
+          repeats[letters[i]] = r;
+          walk(i + 1, repeats, cells + r * counts[letters[i]]);
+        }
+      };
+      walk(0, {}, 0);
+    }
+    const best = Math.min(...plans.map(p => p.error));
+    const ok = plans.filter(p => p.error <= best + DURATION_TOLERANCE);
+    const calm = ok.filter(p => Math.max(...Object.values(p.repeats)) <= REPEAT_SOFT_CAP);
+    const longest = Math.max(...ok.map(p => p.cellLength));
+    const pool = calm.length ? calm : ok.filter(p => p.cellLength === longest);
+    const { cellLength, repeats, steps } = Generator.pickRandom(pool);
+    return { cellLength, repeats, steps };
+  }
+
+  // opts: { numTracks, motifs, formParts, cellLength, scale, key, repeatsByLetter? }
+  // repeatsByLetter (de planDuration) fija las repeticiones de cada letra; sin
+  // él se sortean entre SECTION_REPEAT_CHOICES
   function compose(opts) {
-    const { numTracks, motifs, formParts, cellLength, scale, key } = opts;
+    const { numTracks, motifs, formParts, cellLength, scale, key, repeatsByLetter } = opts;
 
     // Cada letra de la forma comparte spec: "A" suena igual cada vez que aparece
     const specByLetter = {};
     const sections = formParts.map(letter => {
       if (!specByLetter[letter]) {
-        specByLetter[letter] = buildSectionSpec(numTracks, motifs.length);
+        specByLetter[letter] = buildSectionSpec(numTracks, motifs.length, repeatsByLetter && repeatsByLetter[letter]);
       }
       const spec = specByLetter[letter];
       return { label: letter, totalRepeats: spec.totalRepeats, trackBlocks: spec.trackBlocks, recap: false };
@@ -118,7 +167,10 @@ const Composer = (() => {
         ? 0
         : 1 + Math.floor(Math.random() * (motifs.length - 1));
       const base = sections[recapIdx];
-      const recapTrack = base.trackBlocks.findIndex(blocks => blocks !== null);
+      // sorteada entre las pistas con material (no siempre la primera)
+      const candidates = [];
+      base.trackBlocks.forEach((blocks, t) => { if (blocks !== null) candidates.push(t); });
+      const recapTrack = Generator.pickRandom(candidates);
       sections[recapIdx] = {
         label: base.label,
         totalRepeats: base.totalRepeats,
@@ -211,7 +263,6 @@ const Composer = (() => {
 
     // Duraciones: cada nota sostiene una fracción (sustain) del hueco hasta la
     // siguiente nota de su pista — legato como máximo, nunca superposición
-    const MAX_SUSTAIN_STEPS = 16;
     for (let t = 0; t < numTracks; t++) {
       const row = grid[t];
       const notePositions = [];
@@ -222,16 +273,8 @@ const Composer = (() => {
         const s = notePositions[i];
         const cell = row[s];
         const gap = (i + 1 < notePositions.length ? notePositions[i + 1] : totalSteps) - s;
-        const durationSteps = Math.max(1, Math.round(cell.sustain * Math.min(gap, MAX_SUSTAIN_STEPS)));
-        cell.durationSteps = durationSteps;
-        stepEvents[s].push({
-          trackIndex: t,
-          midi: cell.midi,
-          degree: cell.degree,
-          keyOffset: cell.keyOffset,
-          velocity: cell.velocity,
-          durationSteps
-        });
+        cell.durationSteps = Math.max(1, Math.round(cell.sustain * Math.min(gap, Generator.MAX_SUSTAIN_STEPS)));
+        stepEvents[s].push({ trackIndex: t, cell });
       }
     }
 
@@ -247,7 +290,8 @@ const Composer = (() => {
 
   // Re-mapea los grados de la pieza actual a otra tonalidad/escala sin regenerarla;
   // funciona también en plena reproducción. Conserva la modulación por secciones
-  // aplicando el keyOffset guardado en cada nota
+  // aplicando el keyOffset guardado en cada nota. stepEvents apunta a las mismas
+  // celdas, así que basta con el grid
   function retune(scale, key) {
     if (!piece) return;
     piece.scale = scale;
@@ -255,11 +299,6 @@ const Composer = (() => {
     for (const row of piece.grid) {
       for (const cell of row) {
         if (cell) cell.midi = Generator.degreeToMidiInKey(cell.degree, scale, key, cell.keyOffset);
-      }
-    }
-    for (const events of piece.stepEvents) {
-      for (const ev of events) {
-        ev.midi = Generator.degreeToMidiInKey(ev.degree, scale, key, ev.keyOffset);
       }
     }
   }
@@ -285,11 +324,11 @@ const Composer = (() => {
 
       // Factor 0.95 para que sintes monofónicos no pisen el retrigger en legato
       const stepSeconds = Tone.Time(STEP).toSeconds();
-      for (const ev of piece.stepEvents[step]) {
-        const duration = ev.durationSteps * stepSeconds * 0.95;
-        const velocity = shapeVelocity(ev.velocity);
-        AudioEngine.playNote(ev.trackIndex, ev.midi, time, duration, velocity);
-        MidiEngine.playNote(ev.trackIndex, ev.midi, time, duration, velocity);
+      for (const { trackIndex, cell } of piece.stepEvents[step]) {
+        const duration = cell.durationSteps * stepSeconds * 0.95;
+        const velocity = shapeVelocity(cell.velocity);
+        AudioEngine.playNote(trackIndex, cell.midi, time, duration, velocity);
+        MidiEngine.playNote(trackIndex, cell.midi, time, duration, velocity);
       }
       Tone.Draw.schedule(() => {
         if (isPlaying && onStep) onStep(step);
@@ -317,6 +356,14 @@ const Composer = (() => {
     MidiEngine.allNotesOff();
   }
 
+  // Salto a un paso (p. ej. el inicio de una sección): en marcha, el próximo
+  // tick del transporte sigue desde ahí; parado, play reanuda desde ahí. Las
+  // notas ya disparadas terminan con su propia duración
+  function seek(step) {
+    if (!piece) return;
+    currentStep = Math.max(0, Math.min(piece.totalSteps - 1, Math.floor(step)));
+  }
+
   function getCurrentStep() {
     return currentStep;
   }
@@ -325,5 +372,5 @@ const Composer = (() => {
     return isPlaying;
   }
 
-  return { compose, retune, play, stop, getPiece, getIsPlaying, getCurrentStep, shapeVelocity };
+  return { compose, planDuration, retune, play, stop, seek, getPiece, getIsPlaying, getCurrentStep, shapeVelocity };
 })();

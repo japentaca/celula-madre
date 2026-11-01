@@ -58,12 +58,20 @@ tiene distinto al de la madre.
 - `durationSteps >= 1` en toda nota y ninguna nota pisa la siguiente de su pista.
 - Letras de forma repetidas comparten spec (mismo `trackBlocks` por letra, salvo
   la sección de recapitulación).
+- Plan de duración (`Composer.planDuration(formParts, targetSteps)` y luego
+  `compose` con `cellLength: plan.cellLength, repeatsByLetter: plan.repeats`):
+  `cellLength ∈ CELL_LENGTHS`, toda repetición potencia de 2,
+  `piece.totalSteps === plan.steps` y cada sección con el `totalRepeats` de su
+  letra. Con objetivos realistas (≥ 2 min a ≥ 40 bpm, `minutos × bpm × 4`
+  pasos), `plan.steps / targetSteps` en ~[0.85, 1.17]. Las piezas largas
+  (≥ 10 min) deben salir con células de 32–64 pasos, no de 16 repetidas cientos
+  de veces.
 - Plan tonal (modulación por quintas): con S secciones, los
   `section.fifthOffset` forman un **arco trapezoidal** — `offs[0] === 0`,
   `offs[S-1] === 0`, `|offs[i] - offs[i-1]| <= 1`, todos del mismo signo (o 0)
   y `|offs[i]| <= min(4, ⌊(S-1)/2⌋)`; con S ≥ 3 hay al menos una modulación.
   `section.keyOffset === ((fifthOffset * 7) % 12 + 12) % 12` ∈
-  {0, 2, 3, 4, 5, 7, 8, 9, 10}. Toda nota de `grid`/`stepEvents` lleva su
+  {0, 2, 3, 4, 5, 7, 8, 9, 10}. Toda nota del `grid` lleva su
   `keyOffset` y su `midi` equivale a
   `degreeToMidiInKey(degree, scale, key, keyOffset)`. `retune` debe conservar
   esa equivalencia con la nueva escala/tonalidad.
@@ -94,13 +102,19 @@ del contrapunto):
   (velocity > 0.18) ≤ `round(cellLength × (0.9 + 0.9 × curva))`, con curva en
   arco que culmina al 65% de la pieza — o, si no se alcanza, toda nota
   restante de las pistas de fondo está protegida.
-- Sobre piezas completas la poda es moderada (~4–8% de las notas con 5–6
+- Sobre piezas completas la poda es moderada (~3–8% de las notas con 5–6
   pistas; con 1–2 pistas apenas actúa).
+- La idempotencia se comprueba re-ejecutando `balance` sobre la salida de
+  `compose` con el contrapunto desactivado (`globalThis.Counterpoint =
+  { enforce(){} }`): el contrapunto corre después y cambia midi/velocity, lo
+  que altera la saliencia.
 
 **Contrapunto** (`Counterpoint.enforce`, corre dentro de `compose`):
 - En todo paso múltiplo de 4, ninguna pareja de notas audibles (velocity > 0.2)
-  que suenen a la vez (reconstruir con `durationSteps` de `stepEvents`) es
-  disonante según `Counterpoint.isDissonant(a, b, scaleLen)`.
+  que suenen a la vez (reconstruir con `durationSteps` de las celdas del
+  `grid`) es disonante según `Counterpoint.isDissonant(a, b, scaleLen)`.
+  Cada evento de `stepEvents[paso]` es `{ trackIndex, cell }`, con `cell` la
+  misma celda (referencia) del `grid`.
 - `isDissonant`: segundas/séptimas (distancia de grados 1 o n-1 mod n) y tritono
   (6 semitonos) para escalas de ≥6 grados; en pentatónica, semitonos
   {1, 2, 6, 10, 11}.

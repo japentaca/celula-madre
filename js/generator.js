@@ -423,11 +423,17 @@ const Generator = (() => {
   const NOTE_VALUES = [1, 2, 3, 4, 6, 8];
   const NOTE_VALUE_WEIGHTS_ACTIVE = [3.5, 3, 1.4, 0.7, 0.2, 0.1];
   const NOTE_VALUE_WEIGHTS_CALM = [0.5, 1.5, 1.5, 3, 2, 1.5];
+  // Atracción del pulso: los valores que dejan el siguiente ataque en tiempo
+  // (paso múltiplo de 4) pesan más, así tras una síncopa el ritmo tiende a
+  // recolocarse y los tiempos fuertes — que energía y contrapunto protegen —
+  // llevan material de verdad. Sin ella el ritmo flota casi como al azar
+  const BEAT_PULL = 2.5;
 
-  function pickNoteValue(breath) {
+  function pickNoteValue(breath, pos) {
     let total = 0;
     const weights = NOTE_VALUES.map((v, i) => {
-      const w = NOTE_VALUE_WEIGHTS_ACTIVE[i] * breath + NOTE_VALUE_WEIGHTS_CALM[i] * (1 - breath);
+      let w = NOTE_VALUE_WEIGHTS_ACTIVE[i] * breath + NOTE_VALUE_WEIGHTS_CALM[i] * (1 - breath);
+      if ((pos + v) % 4 === 0) w *= BEAT_PULL;
       total += w;
       return w;
     });
@@ -467,11 +473,13 @@ const Generator = (() => {
     for (let i = 0; i < actualLength; i++) {
       const breath = 0.5 + 0.5 * Math.sin(breathPhase + (i / actualLength) * Math.PI * 2 * breathCycles);
       const legato = 0.5 + 0.5 * Math.sin(legatoPhase + (i / actualLength) * Math.PI * 2 * legatoCycles);
-      const velocity = 0.45 + 0.25 * breath + 0.1 * (degrees[i] / 7) + (Math.random() - 0.5) * 0.2;
+      // Acento métrico leve: tiempo (paso múltiplo de 4) y, más, cabeza de compás
+      const accent = i % 16 === 0 ? 0.1 : i % 4 === 0 ? 0.06 : 0;
+      const velocity = 0.45 + 0.25 * breath + 0.1 * (degrees[i] / 7) + accent + (Math.random() - 0.5) * 0.2;
       let note = false;
       if (i >= nextOnset) {
         note = Math.random() < 0.65 + 0.32 * breath;
-        nextOnset = i + pickNoteValue(breath);
+        nextOnset = i + pickNoteValue(breath, i);
       }
       cell.push({
         note,
@@ -507,6 +515,29 @@ const Generator = (() => {
 
   function transpose(cell, degrees) {
     return cell.map(s => ({ ...s, degree: s.degree + degrees }));
+  }
+
+  function clampDegree(d) {
+    return Math.max(-7, Math.min(7, d));
+  }
+
+  // Transporte al azar en [-3, 3] sin 0, limitado a los desplazamientos que
+  // dejan las notas que suenan dentro de [-7, 7]; si ninguno cabe, el de
+  // menor desborde (el recorte final de generateVariation hace el resto)
+  function pickTransposition(cell) {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const s of cell) {
+      if (!s.note) continue;
+      if (s.degree < lo) lo = s.degree;
+      if (s.degree > hi) hi = s.degree;
+    }
+    if (lo === Infinity) { lo = 0; hi = 0; }
+    const offsets = [-3, -2, -1, 1, 2, 3];
+    const fits = offsets.filter(o => lo + o >= -7 && hi + o <= 7);
+    if (fits.length) return pickRandom(fits);
+    const overflow = o => Math.max(0, -7 - (lo + o)) + Math.max(0, hi + o - 7);
+    return offsets.reduce((best, o) => (overflow(o) < overflow(best) ? o : best));
   }
 
   // Toma la mitad de la célula y la repite para conservar el largo original
@@ -552,8 +583,10 @@ const Generator = (() => {
     const ops = [
       c => invert(c),
       c => reverse(c),
-      c => rotate(c, Math.floor(Math.random() * c.length)),
-      c => transpose(c, Math.floor(Math.random() * 7) - 3),
+      // rotación en tiempos enteros (múltiplo de 4, nunca 0) para no desplazar
+      // el ritmo respecto al pulso
+      c => rotate(c, 4 * (1 + Math.floor(Math.random() * (c.length / 4 - 1)))),
+      c => transpose(c, pickTransposition(c)),
       c => subsequence(c)
     ];
     let cell = motherCell;
@@ -563,7 +596,9 @@ const Generator = (() => {
     }
     if (Math.random() < 0.4) cell = recontour(cell, motherCell.contour, resolveContourPool(contourChoice));
     const contourName = cell.contour || motherCell.contour;
-    cell = applyMask(cell, generateModifierMask(cell.length));
+    // la máscara mueve grados ±2: recorte final para mantener [-7, 7]
+    cell = applyMask(cell, generateModifierMask(cell.length))
+      .map(s => (s.degree < -7 || s.degree > 7 ? { ...s, degree: clampDegree(s.degree) } : s));
     cell.contour = contourName;
     return cell;
   }
@@ -585,6 +620,22 @@ const Generator = (() => {
     return pickRandom(FORMS);
   }
 
+  // Escalas que entran en el sorteo "Aleatoria": la cromática queda fuera
+  // (sin centro tonal, la modulación no la altera y el contrapunto la trata
+  // aparte); sigue disponible eligiéndola a mano
+  const RANDOM_SCALES = ['major', 'minor', 'pentatonic', 'dorian', 'mixolydian'];
+
+  function resolveScale(choice) {
+    return SCALES[choice] ? choice : pickRandom(RANDOM_SCALES);
+  }
+
+  // Tonalidad en semitonos 0-11; cualquier valor fuera de rango (p. ej.
+  // "random") se sortea
+  function resolveKey(choice) {
+    const k = parseInt(choice, 10);
+    return k >= 0 && k <= 11 ? k : Math.floor(Math.random() * 12);
+  }
+
   function parseForm(formStr) {
     return formStr.split('-');
   }
@@ -604,6 +655,19 @@ const Generator = (() => {
   // viaje está acotado a ±4, el keyOffset identifica el signo sin ambigüedad
   const FLAT_KEY_OFFSETS = new Set([3, 5, 8, 10]);
 
+  const keyPitchClassCache = new Map();
+
+  function keyPitchClasses(scaleName, key, keyOffset) {
+    const cacheKey = scaleName + '|' + key + '|' + keyOffset;
+    let pcs = keyPitchClassCache.get(cacheKey);
+    if (!pcs) {
+      const intervals = SCALES[scaleName] || SCALES.major;
+      pcs = new Set(intervals.map(i => (key + keyOffset + i) % 12));
+      keyPitchClassCache.set(cacheKey, pcs);
+    }
+    return pcs;
+  }
+
   // Modulación suave: la nota se calcula siempre en la tonalidad base y, si no
   // pertenece a la escala transportada keyOffset semitonos, se ajusta al
   // semitono más cercano siguiendo la armadura: hacia el lado de los sostenidos
@@ -614,8 +678,7 @@ const Generator = (() => {
   function degreeToMidiInKey(degree, scaleName, key, keyOffset, baseOctave) {
     const midi = degreeToMidi(degree, scaleName, key, baseOctave);
     if (!keyOffset) return midi;
-    const intervals = SCALES[scaleName] || SCALES.major;
-    const pcs = new Set(intervals.map(i => (key + keyOffset + i) % 12));
+    const pcs = keyPitchClasses(scaleName, key, keyOffset);
     const pc = m => ((m % 12) + 12) % 12;
     if (pcs.has(pc(midi))) return midi;
     const dir = FLAT_KEY_OFFSETS.has(keyOffset) ? -1 : 1;
@@ -624,6 +687,33 @@ const Generator = (() => {
       if (pcs.has(pc(midi - dir * d))) return midi - dir * d;
     }
     return midi;
+  }
+
+  // --- Utilidades compartidas por los pases sobre la pieza compuesta ---
+  // (humanizer, energy, counterpoint y composer cargan después de este módulo)
+
+  // Umbral de nota fantasma: por debajo no cuenta como energía ni como
+  // disonancia, el contrapunto apaga ahí lo que no resuelve y la compresión
+  // de dinámica del compositor la deja intacta
+  const GHOST_VELOCITY = 0.18;
+
+  // Tope del hueco que una nota puede sostener (duración = sustain × hueco)
+  const MAX_SUSTAIN_STEPS = 16;
+
+  // Mapa pista×paso -> marcador de bloque; los pases no mueven bloques, así
+  // que sigue válido mientras mutan la rejilla
+  function buildBlockMap(ctx) {
+    const map = Array.from({ length: ctx.numTracks }, () => new Array(ctx.totalSteps).fill(null));
+    for (const marker of ctx.blockMarkers) {
+      for (let s = marker.startStep; s < marker.startStep + marker.lengthSteps; s++) {
+        map[marker.trackIndex][s] = marker;
+      }
+    }
+    return map;
+  }
+
+  function sectionAt(ctx, step) {
+    return ctx.sections.find(sec => step >= sec.startStep && step < sec.startStep + sec.lengthSteps);
   }
 
   return {
@@ -637,8 +727,14 @@ const Generator = (() => {
     generateVariation,
     generateMotifs,
     generateForm,
+    resolveScale,
+    resolveKey,
     parseForm,
     degreeToMidi,
-    degreeToMidiInKey
+    degreeToMidiInKey,
+    GHOST_VELOCITY,
+    MAX_SUSTAIN_STEPS,
+    buildBlockMap,
+    sectionAt
   };
 })();
