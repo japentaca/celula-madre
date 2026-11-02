@@ -708,7 +708,7 @@ const App = (() => {
   }
 
   // Respiro entre una pieza y la siguiente (Auto-generar / Auto-reinicio / kiosco)
-  const PIECE_GAP_MS = 3000;
+  const PIECE_GAP_MS = 2000;
 
   function cancelNextPiece() {
     clearTimeout(state.nextPieceTimer);
