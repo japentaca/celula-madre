@@ -385,6 +385,718 @@ const Generator = (() => {
         }
       }
       return h;
+    },
+
+    // Infinito: la serie infinita de Per Nørgård — a(2k) = −a(k), a(2k+1) =
+    // a(k)+1 —, autosimilar por construcción binaria: cada índice par invierte
+    // y cada impar sube un grado, así que la línea camina por grados conjuntos
+    // y de pronto salta en espejo de sí misma; se sortea la rama (índice de
+    // arranque 2^j·m), el espejo y una lectura cada tres (otra textura)
+    infinito(n) {
+      const start = pickRandom([0, 0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32]);
+      const stride = pickRandom([1, 1, 1, 3]);
+      const mirror = Math.random() < 0.5 ? 1 : -1;
+      const last = start + (n - 1) * stride;
+      const series = new Array(last + 1);
+      series[0] = 0;
+      for (let i = 1; i <= last; i++) {
+        series[i] = i % 2 ? series[(i - 1) / 2] + 1 : -series[i / 2];
+      }
+      const out = [];
+      for (let i = 0; i < n; i++) out.push(mirror * series[start + i * stride]);
+      return out;
+    },
+
+    // Arpegio: acorde quebrado — el primer contorno que piensa en armonía y no
+    // en línea. Sortea una pequeña progresión de fundamentales (I–IV–V–I,
+    // I–vi–IV–V, descensos por terceras…), cada acorde dura un tramo múltiplo
+    // de 4 pasos, y recorre sus notas (fundamental, 3ª, 5ª, a veces 7ª,
+    // doblajes de octava) con un patrón fijo por célula — ascendente,
+    // descendente, Alberti, quebrado, ida y vuelta — con cambios de inversión
+    // ocasionales; cada acorde entra por la inversión que menos salta desde la
+    // última nota (conducción de voces). Devuelve grados enteros con un ámbito
+    // de ~9-12, cerca del que impone la normalización, para que las terceras
+    // sigan siendo terceras al redondear
+    arpegio(n) {
+      const prog = pickRandom([
+        [0, 3, 4, 0], [0, 5, 3, 4], [0, -2, -3, -1], [0, 2, 4, 0],
+        [0, 0, 3, 4], [0, 3, 0, 4], [0, -3, 3, 0], [0, 5, 1, 4]
+      ]).slice();
+      if (Math.random() < 0.5) prog[prog.length - 1] = 0;
+      let chords = n <= 16 && Math.random() < 0.5 ? prog.slice(0, 2) : prog;
+      if (n >= 64 && Math.random() < 0.5) chords = chords.concat(chords);
+      const k = chords.length;
+      const dur = new Array(k).fill(n / k);
+      if (n / k >= 8 && Math.random() < 0.5) {
+        const i = Math.floor(Math.random() * (k - 1));
+        const shift = Math.random() < 0.5 ? 4 : -4;
+        dur[i] += shift;
+        dur[i + 1] -= shift;
+      }
+
+      const seventh = Math.random() < 0.3;
+      const L = Math.random() < 0.6 ? 4 : 3;                 // notas del dibujo: tríada o hasta la octava/7ª
+      const pattern = pickRandom(['up', 'down', 'alberti', 'broken', 'updown']);
+      let figure;
+      if (pattern === 'up') figure = Array.from({ length: L }, (_, j) => j);
+      else if (pattern === 'down') figure = Array.from({ length: L }, (_, j) => L - 1 - j);
+      else if (pattern === 'alberti') figure = L === 3 ? [0, 2, 1, 2] : [0, 3, 1, 3, 0, 3, 2, 3];
+      else if (pattern === 'updown') figure = Array.from({ length: 2 * L - 2 }, (_, j) => j < L ? j : 2 * L - 2 - j);
+      else {                                                   // quebrado: sube dos, baja una, rebota en los bordes
+        figure = [];
+        let p = 0;
+        let d = 1;
+        for (let j = 0; j < 4 * L; j++) {
+          figure.push(p);
+          const step = j % 3 === 2 ? -d : d;
+          if (p + step < 0 || p + step > L - 1) d = -d;
+          p += j % 3 === 2 ? -d : d;
+        }
+      }
+      const period = figure.length;
+      const LO = -5;
+      const HI = 7;
+      const chordTones = [0, 2, 4].concat(seventh ? [6] : []);
+
+      const out = [];
+      let last = null;
+      for (let c = 0; c < k; c++) {
+        const tones = [];
+        for (let oct = -3; oct <= 3; oct++) {
+          for (const t of chordTones) {
+            const v = chords[c] + t + 7 * oct;
+            if (v >= LO && v <= HI) tones.push(v);
+          }
+        }
+        tones.sort((a, b) => a - b);
+        const maxS = tones.length - L;
+        let s = Math.floor(Math.random() * (maxS + 1));
+        if (last !== null && Math.random() < 0.8) {           // conducción de voces: la inversión más cercana
+          let best = Infinity;
+          for (let i = 0; i <= maxS; i++) {
+            const gap = Math.abs(tones[i + figure[0]] - last);
+            if (gap < best) { best = gap; s = i; }
+          }
+        }
+        for (let j = 0; j < dur[c]; j++) {
+          if (j && j % period === 0 && Math.random() < 0.2) {  // cambio de inversión ocasional
+            s = Math.max(0, Math.min(maxS, s + (Math.random() < 0.5 ? -1 : 1)));
+          }
+          last = tones[s + figure[j % period]];
+          out.push(last);
+        }
+      }
+
+      // Si el dibujo se quedó en un registro estrecho, un tramo entero se
+      // desplaza una octava — el que deje el ámbito más cerca de 11, el que
+      // impone la normalización, para que esta no estire ni encoja las terceras
+      if (Math.max(...out) - Math.min(...out) < 9) {
+        let best = { err: Infinity, start: 0, len: 0, shift: 0 };
+        for (let c = 0, pos = 0; c < k; pos += dur[c], c++) {
+          for (const shift of [-7, 7]) {
+            const trial = out.map((v, i) => i >= pos && i < pos + dur[c] ? v + shift : v);
+            const err = Math.abs(Math.max(...trial) - Math.min(...trial) - 11);
+            if (err < best.err) best = { err, start: pos, len: dur[c], shift };
+          }
+        }
+        for (let i = best.start; i < best.start + best.len; i++) out[i] += best.shift;
+      }
+      return out;
+    },
+
+    // Escalera: la secuencia barroca (progresión melódica) — un motivo corto de
+    // 3-5 notas, casi todo grados conjuntos, se transporta exacto por un
+    // intervalo fijo (segunda o tercera, más a menudo hacia abajo) tres o
+    // cuatro peldaños, a veces perdiendo su última nota en cada peldaño
+    // (liquidación); al acabar rompe con un breve gesto de cierre y un salto de
+    // recolocación — al registro de partida, y la escalera se repite, o al
+    // opuesto, y se invierte — y arranca otra, acaso con otro motivo. Sin
+    // ruido: la gracia es la exactitud del transporte. El registro se acota a
+    // ~11 grados, el ámbito que impone la normalización, para que los peldaños
+    // no se deformen al redondear
+    escalera(n) {
+      const LO = -5.5;
+      const HI = 5.5;
+      const MOTIFS = [
+        [0, 1, 2], [0, 2, 1], [0, -1, -2], [0, -2, -1], [0, -1, 1], [0, 1, -1],
+        [0, -1, -2, 0], [0, 1, 0, -1], [0, 2, 1, 3], [0, -2, -1, -3], [0, 1, 2, 0],
+        [0, 3, 2, 1], [0, 2, 1, 0, -1], [0, -1, 0, 1, 2], [0, 1, 2, 3, 1]
+      ];
+      const randomMotif = () => {
+        let m;
+        do {
+          m = [0];
+          const len = 3 + Math.floor(Math.random() * 3);
+          for (let j = 1; j < len; j++) {
+            m.push(m[j - 1] + (Math.random() < 0.1 ? pickRandom([-3, 3]) : pickRandom([-2, -1, 1, 2])));
+          }
+        } while (Math.max(...m) - Math.min(...m) > 4);
+        return m;
+      };
+      const pickMotif = () => Math.random() < 0.7 ? pickRandom(MOTIFS) : randomMotif();
+      const pickInterval = () => Math.random() < 0.1
+        ? pickRandom([-3, 3])
+        : pickRandom([-1, -1, -1, -2, -2, 1, 1, 2]);
+      // Nivel de arranque que deja la escalera entera (motivo + transporte
+      // acumulado) dentro del registro; null si no cabe
+      const range = (motif, iv, steps) => {
+        const reach = iv * (steps - 1);
+        const lo = LO - Math.min(...motif) - Math.min(0, reach);
+        const hi = HI - Math.max(...motif) - Math.max(0, reach);
+        return lo <= hi ? [lo, hi] : null;
+      };
+
+      const out = [];
+      let motif = pickMotif();
+      let iv = pickInterval();
+      let level = null;
+      let last = 0;
+      let min = Infinity;
+      let max = -Infinity;
+      while (out.length < n) {
+        let steps = Math.random() < 0.5 ? 3 : 4;
+        let r = range(motif, iv, steps);
+        if (!r) r = range(motif, iv, steps = 3);
+        if (!r) r = range(motif, iv = Math.sign(iv), steps);
+        if (level === null) {
+          // La primera arranca casi siempre desde el borde del que se aleja
+          level = Math.random() < 0.7 ? (iv < 0 ? r[1] : r[0]) : r[0] + Math.random() * (r[1] - r[0]);
+        } else if (max - min < 9) {
+          // Mientras la curva no ocupe el registro, el salto de recolocación va
+          // al borde que falte: una escalera estrecha que luego se estira al
+          // normalizar perdería la exactitud de los peldaños
+          const reach = iv * (steps - 1);
+          const top = HI - Math.max(...motif) - Math.max(0, reach);
+          const bottom = LO - Math.min(...motif) - Math.min(0, reach);
+          level = HI - max > min - LO ? Math.max(r[0], Math.min(r[1], top)) : Math.max(r[0], Math.min(r[1], bottom));
+        } else if (level < r[0] || level > r[1]) {
+          // No cabe desde aquí: antes que aplastarla, invierte la dirección; si
+          // tampoco, reubica el nivel en el borde más cercano
+          const flipped = range(motif, -iv, steps);
+          if (flipped && level >= flipped[0] && level <= flipped[1]) iv = -iv;
+          else level = Math.max(r[0], Math.min(r[1], level));
+        }
+        const start = level;
+        const liquidate = motif.length >= 4 && Math.random() < 0.3;
+        for (let k = 0; k < steps && out.length < n; k++) {
+          const rung = liquidate ? motif.slice(0, Math.max(2, motif.length - k)) : motif;
+          for (const d of rung) {
+            last = level + k * iv + d;
+            out.push(last);
+            if (last < min) min = last;
+            if (last > max) max = last;
+            if (out.length >= n) break;
+          }
+        }
+        // Rompimiento: gesto de cierre que prolonga el movimiento un grado y, a
+        // veces, rebota; luego salto de recolocación
+        if (Math.random() < 0.6) {
+          out.push(Math.max(LO, Math.min(HI, last + Math.sign(iv))));
+          if (Math.random() < 0.4) out.push(last);
+        }
+        if (Math.random() < 0.4) motif = pickMotif();
+        if (Math.random() < 0.4) {
+          level = start + pickRandom([-1, 0, 0, 1]);             // al registro de partida: la escalera se repite
+        } else {
+          iv = -iv;                                              // al opuesto: la escalera se invierte
+          level = last - iv * (steps - 1) * 0.5 + (Math.random() - 0.5) * 2;
+        }
+        if (Math.random() < 0.3) iv = pickInterval();
+      }
+      return out.slice(0, n);
+    },
+
+    // Autómata: autómata celular elemental (Wolfram) sobre una fila cíclica de
+    // bits, una generación por paso, y la altura se lee de la fila — centro de
+    // masa, bits vivos, borde izquierdo, ventana central o paseo guiado por el
+    // bit del centro. Caos determinista: regla, semilla y lectura fijan la
+    // línea entera; solo un suavizado leve la vuelve cantable
+    autómata(n) {
+      const RULES = [30, 54, 90, 110, 126, 150, 184];
+      const MODES = ['mass', 'mass', 'count', 'count', 'edge', 'window', 'walk'];
+      const W = pickRandom([16, 24, 32]);
+      const half = W >> 1;
+      const seed = () => {
+        const row = new Array(W).fill(0);
+        if (Math.random() < 0.5) {
+          row[half] = 1;                                         // semilla única: triángulos y estructuras
+        } else {
+          const density = 0.15 + Math.random() * 0.15;
+          for (let i = 0; i < W; i++) row[i] = Math.random() < density ? 1 : 0;
+          if (!row.includes(1)) row[half] = 1;
+        }
+        return row;
+      };
+      const run = (rule, mode) => {
+        let row = seed();
+        const warm = Math.random() < 0.5 ? 0 : Math.floor(Math.random() * half);
+        // Peso de la lectura anterior: el conteo y la ventana saltan más y
+        // piden más suavizado; las demás lecturas a veces van crudas
+        const smooth = mode === 'window' ? 0.6 + Math.random() * 0.2
+          : mode === 'count' ? 0.5 + Math.random() * 0.25
+          : Math.random() < 0.8 ? 0.35 + Math.random() * 0.3 : 0;
+        const out = [];
+        let v = null;
+        let mass = half;
+        let walk = 0;
+        for (let g = 0; g < n + warm; g++) {
+          let alive = row.reduce((s, b) => s + b, 0);
+          if (alive === 0 || alive === W) {                      // la regla murió o se saturó: reinyecta
+            row[Math.floor(Math.random() * W)] ^= 1;
+            alive = alive === 0 ? 1 : W - 1;
+          }
+          if (g >= warm) {
+            let r;
+            if (mode === 'mass') {
+              // Centro de masa circular, desenrollado para que no salte en la costura
+              let x = 0;
+              let y = 0;
+              row.forEach((b, i) => {
+                if (b) {
+                  x += Math.cos(i / W * 2 * Math.PI);
+                  y += Math.sin(i / W * 2 * Math.PI);
+                }
+              });
+              if (Math.hypot(x, y) > 0.5) {                      // fila uniforme: sin centro, se queda donde estaba
+                let d = Math.atan2(y, x) / (2 * Math.PI) * W - mass;
+                d -= W * Math.round(d / W);
+                mass += d;
+              }
+              r = mass;
+            } else if (mode === 'count') {
+              r = alive;
+            } else if (mode === 'edge') {
+              r = row.indexOf(1);
+            } else if (mode === 'window') {
+              // Tres bits centrales leídos en código Gray, que cambia menos entre vecinos
+              const b2 = row[half - 1];
+              const b1 = row[half] ^ b2;
+              const b0 = row[half + 1] ^ row[half];
+              r = b2 * 4 + b1 * 2 + b0;
+            } else {
+              walk += row[half] ? 1 : -1;
+              if (walk > 8) walk = 16 - walk;
+              if (walk < -8) walk = -16 - walk;
+              r = walk;
+            }
+            v = v === null ? r : v * smooth + r * (1 - smooth);
+            out.push(v);
+          }
+          row = row.map((_, i) =>
+            (rule >> ((row[(i + W - 1) % W] << 2) | (row[i] << 1) | row[(i + 1) % W])) & 1);
+        }
+        return out;
+      };
+      // Algunas parejas regla+lectura degeneran (el centro de masa de la 90
+      // simétrica es constante, la 54 cae en un ostinato de dos o tres valores
+      // que la normalización estiraría a saltos): se re-sortea hasta que la
+      // curva ocupe al menos seis franjas de su propio ámbito
+      let out;
+      for (let t = 0; t < 12; t++) {
+        out = run(pickRandom(RULES), pickRandom(MODES));
+        const min = Math.min(...out);
+        const span = Math.max(...out) - min;
+        if (span > 0 && new Set(out.map(v => Math.round((v - min) / span * 11))).size >= 6) break;
+      }
+      return out;
+    },
+
+    // Bordón: melodía compuesta — polifonía implícita en una sola línea, como
+    // las suites para cello solo o el bajo de una zanfona —: una nota pedal
+    // fija vuelve cada 2, 3 o 4 pasos (o irregular, nunca dos seguidas) mientras
+    // la otra voz pasea por encima (o por debajo: pedal invertido) con
+    // continuidad propia — retoma donde se quedó, grados conjuntos, atraída por
+    // un centro que dibuja un arco —, a una tercera como poco del pedal; a veces
+    // el pedal cambia una vez a mitad (tónica → dominante) o es doble (tónica y
+    // quinta alternadas). El pedal no lleva ruido: debe ser la misma altura
+    bordón(n) {
+      const inverted = Math.random() < 0.35;                   // pedal agudo: se calcula grave y se refleja
+      const double = Math.random() < 0.12;
+      const shiftAt = !double && Math.random() < 0.3 ? n / 2 : n;
+      const shift = pickRandom([-3, 4]);                        // dominante grave o aguda
+      const PATTERNS = [2, 2, 3, 4, 0];                         // 0 = irregular
+      let pattern = pickRandom(PATTERNS);
+      const phase = Math.random() < 0.5 ? 0 : 1;               // empieza por el pedal o por la voz
+      // Centro de la voz: arco con clímax desplazado, o rampa que sube o baja
+      const lo = 3 + Math.random() * 2;
+      const hi = 8.5 + Math.random() * 2;
+      const shape = pickRandom(['arc', 'arc', 'up', 'down']);
+      const peak = 0.5 + Math.random() * 0.25;
+      const target = i => {
+        const t = i / (n - 1);
+        const s = shape === 'up' ? t : shape === 'down' ? 1 - t
+          : t < peak ? Math.sin(t / peak * Math.PI / 2) : Math.cos((t - peak) / (1 - peak) * Math.PI / 2);
+        return lo + (hi - lo) * s;
+      };
+      const out = [];
+      let pedal = 0;
+      let voice = target(0) + (double ? 4 : 0);
+      let wasPedal = false;
+      let fifth = false;
+      for (let i = 0; i < n; i++) {
+        if (i === shiftAt) pedal = shift;
+        if (i === n / 2 && Math.random() < 0.25) pattern = pickRandom(PATTERNS.filter(p => p !== pattern));
+        const isPedal = pattern ? (i + phase) % pattern === pattern - 1 : !wasPedal && Math.random() < 0.4;
+        wasPedal = isPedal;
+        if (isPedal) {
+          fifth = double && !fifth;
+          out.push(fifth ? 4 : pedal);
+          continue;
+        }
+        // La voz vive sobre el pedal más alto en juego: a una tercera como poco
+        // y sin alejarse más de una octava y pico, para que el ámbito crudo se
+        // quede cerca del que impone la normalización
+        const top = Math.max(pedal, double ? 4 : 0);
+        const want = target(i) + top;
+        const pull = want - voice;
+        let step = pickRandom([-2, -1, -1, -1, 0, 1, 1, 1, 2]);
+        if (Math.abs(pull) > 1.5 && Math.random() < 0.6) step = Math.sign(pull) * pickRandom([1, 1, 1, 2]);
+        voice = Math.max(top + 2, Math.min(top + 11, voice + step));
+        out.push(voice + (Math.random() - 0.5) * 0.3);
+      }
+      return inverted ? out.map(v => -v) : out;
+    },
+
+    // Rebote: una pelota que cae y rebota — parábolas cada vez más cortas y más
+    // bajas, lentas en el ápice y rápidas junto al suelo — hasta posarse y
+    // rodar: asimétrico y cadencial, la célula aterriza. Lanzada desde lo alto
+    // o desde el suelo; a veces invertida (rebota contra un techo y el reposo
+    // queda arriba), con el suelo en pendiente o con dos pelotas sumadas. Si se
+    // posa con más de un 30% de célula por delante, segundo lanzamiento con
+    // menos energía (hasta dos), si no rueda con una deriva leve
+    rebote(n) {
+      const H = 8;                                              // altura del primer ápice (escala cruda)
+      const inverted = Math.random() < 0.35;
+      const sloped = Math.random() < 0.12;
+      const twoBalls = Math.random() < 0.12;
+      // Trayectoria analítica por tramos: cada bote es una parábola de vuelo
+      // 2s/g; el primero dura `first` de la célula y culmina en H
+      const ball = (first, e, fromTop, delay) => {
+        const T = n * first;
+        const g = 8 * H / (T * T);
+        const v0 = 4 * H / T;
+        const out = new Array(n).fill(0);
+        let t0 = fromTop ? delay - T / 2 : delay;               // desde lo alto: a mitad de parábola
+        let s = v0;
+        let throws = 0;
+        let rollFrom = -1;
+        const rollAmp = H * (0.06 + Math.random() * 0.06);
+        const rollPeriod = 4 + Math.random() * 4;
+        const drift = (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 0.3) * H / n;
+        for (let i = delay; i < n; i++) {
+          while (rollFrom < 0 && i - t0 >= 2 * s / g) {
+            t0 += 2 * s / g;
+            s *= e * (0.95 + Math.random() * 0.1);              // cada bote pierde algo distinto
+            if (s >= 0.1 * v0) continue;
+            if (n - t0 > 0.3 * n && throws < 2 && Math.random() < 0.6) {
+              throws++;
+              t0 += 1 + Math.floor(Math.random() * 3);          // breve reposo antes de relanzar
+              s = v0 * (0.45 + Math.random() * 0.3);
+            } else {
+              rollFrom = t0;
+            }
+          }
+          if (rollFrom >= 0) {
+            const r = i - rollFrom;
+            out[i] = rollAmp * Math.sin(r / rollPeriod * Math.PI * 2) + drift * r;
+            continue;
+          }
+          const tau = i - t0;
+          out[i] = tau < 0 ? 0 : Math.max(0, s * tau - g * tau * tau / 2);
+        }
+        return out;
+      };
+      const main = ball(0.25 + Math.random() * 0.2, 0.6 + Math.random() * 0.25, Math.random() < 0.5, 0);
+      let out = main;
+      if (twoBalls) {
+        const delay = Math.floor(n * (0.1 + Math.random() * 0.25));
+        const amp = 0.4 + Math.random() * 0.3;
+        const other = ball(0.2 + Math.random() * 0.2, 0.6 + Math.random() * 0.25, false, delay);
+        out = main.map((v, i) => v + amp * other[i]);
+      }
+      const slope = sloped ? (Math.random() < 0.5 ? -1 : 1) * (0.25 + Math.random() * 0.25) * H / n : 0;
+      out = out.map((v, i) => v + slope * i + (Math.random() - 0.5) * 0.35);
+      return inverted ? out.map(v => -v) : out;
+    },
+
+    // Bifurcación: el mapa logístico x ← r·x·(1−x) con r barriendo la célula
+    // por el diagrama de bifurcación — punto fijo, periodo 2, 4, 8 y caos, con
+    // la ventana de periodo 3 de paso —: un ostinato de dos notas que se
+    // desdobla en cuatro, en ocho y se deshace, o al revés; el único caos
+    // determinista con historia del repertorio. Se sortea el sentido (hacia el
+    // caos, hacia el orden, o ida y vuelta en células largas) y el tramo de r
+    // recorrido; el barrido se demora en las zonas estrechas de los
+    // desdoblamientos y de la ventana de periodo 3, y en el caos la altura
+    // lleva memoria del paso anterior para que sea continuidad y no ruido; en
+    // lo periódico es exacta (repetición literal). Nunca llega a r = 4, donde
+    // el mapa puede caer en 0 y quedarse
+    bifurcación(n) {
+      const [rLo, rHi] = pickRandom([[2.9, 3.99], [3.0, 3.85], [3.2, 3.6], [3.3, 3.99], [3.5, 3.99], [3.45, 3.9]]);
+      const mode = n >= 64 && Math.random() < 0.3 ? 'arc' : Math.random() < 0.55 ? 'up' : 'down';
+      // Barrido no lineal: densidad de tiempo por tramo de r — poca en el punto
+      // fijo, mucha donde el diagrama cambia deprisa —; r(t) es la inversa de
+      // su acumulada
+      const SLOW = [[2.8, 3.25, 0.5], [3.4, 3.6, 4], [3.82, 3.86, 3]];
+      const M = 256;
+      const cdf = [0];
+      for (let j = 0; j < M; j++) {
+        const r = rLo + (j + 0.5) / M * (rHi - rLo);
+        cdf.push(cdf[j] + SLOW.reduce((w, [a, b, k]) => r >= a && r <= b ? w * k : w, 1));
+      }
+      const rOf = t => {
+        const target = t * cdf[M];
+        let j = 1;
+        while (j < M && cdf[j] < target) j++;
+        const f = (target - cdf[j - 1]) / (cdf[j] - cdf[j - 1]);
+        return rLo + (j - 1 + f) / M * (rHi - rLo);
+      };
+      const tau = i => {
+        const t = i / (n - 1);
+        return mode === 'up' ? t : mode === 'down' ? 1 - t : 1 - Math.abs(2 * t - 1);
+      };
+      // Transitorio descartado: arranca ya sobre el atractor; después r cambia
+      // tan despacio que el sistema lo sigue sin transitorios visibles
+      let x = 0.2 + Math.random() * 0.6;
+      const r0 = rOf(tau(0));
+      for (let k = 20 + Math.floor(Math.random() * 31); k > 0; k--) x = r0 * x * (1 - x);
+      const drift = Math.random() < 0.5 ? (Math.random() - 0.5) * 0.5 / n : 0;
+      const out = [];
+      let v = x;
+      for (let i = 0; i < n; i++) {
+        const r = rOf(tau(i));
+        x = r * x * (1 - x);
+        const chaos = Math.max(0, Math.min(1, (r - 3.57) / 0.3));
+        const memory = 0.65 * chaos;
+        v = memory * v + (1 - memory) * x;
+        out.push(v + drift * i);
+      }
+      return out;
+    },
+
+    // Período: la frase clásica, antecedente y consecuente. La pregunta
+    // arranca con una cabeza de 3-4 notas, sube hacia su clímax y queda
+    // abierta en un grado inestable (5º, 2º, dominante grave…) al que llega
+    // por grado conjunto; la respuesta imita la cabeza — literal, en secuencia
+    // o invertida; en el período contrastante otra cabeza con el mismo dibujo —,
+    // parte igual o más alto (intensificación) y cierra en la tónica por grados
+    // desde arriba (2-1-0), desde abajo con sensible tras hundirse bajo la
+    // tónica, o con salto de dominante, y la sostiene en sus últimas
+    // posiciones: el único contorno que modela la dirección del final de
+    // frase. Cada frase va en 8 casillas de L/8 pasos (cabeza mantenida,
+    // desarrollo interpolado por grados con ruido leve, cierre exacto), así
+    // que toda frontera cae en el pulso. En células de 32+ se encadenan
+    // períodos de 8+8, 16+16 o 32+32 — repetidos literalmente o compuestos de
+    // nuevo — y oraciones 8+8+16 (pregunta repetida, literal o en secuencia, y
+    // respuesta alargada). Cada período visita el registro grave por algún
+    // medio (hundimiento, semicadencia o dominante graves, cabeza desde la
+    // dominante grave) y al final la tónica se deja en el centro exacto del
+    // ámbito crudo, repartiendo el estirón entre ambos lados, para que la
+    // normalización la deje junto al 0
+    período(n) {
+      const weighted = (items) => {
+        let total = 0;
+        for (const it of items) total += it[1];
+        let r = Math.random() * total;
+        for (const it of items) {
+          r -= it[1];
+          if (r <= 0) return it[0];
+        }
+        return items[items.length - 1][0];
+      };
+      // Cabeza: 3-4 grados, conjuntos salvo un salto característico opcional
+      const makeHead = (len, low) => {
+        const head = [low ? -3 : weighted([[0, 3], [2, 2], [4, 1.5], [1, 0.5]])];
+        const leapAt = Math.random() < 0.6 ? 1 + Math.floor(Math.random() * (len - 1)) : -1;
+        let dir = Math.random() < 0.6 ? 1 : -1;
+        for (let j = 1; j < len; j++) {
+          const size = j === leapAt ? 2 + Math.floor(Math.random() * 3) : 1;
+          let next = head[j - 1] + dir * size;
+          if (next > 6 || next < -4) next = head[j - 1] - dir * size;
+          head.push(next);
+          if (Math.random() < 0.3) dir = -dir;
+        }
+        return head;
+      };
+      // Frase de L pasos en 8 casillas de u = L/8: cabeza mantenida, casillas
+      // clave fijas (clímax, hundimiento, pre-cadencia), las libres
+      // interpoladas con un vaivén de ±1, aproximación y cierre exactos
+      // (La casilla mide u pasos; una frase larga a la velocidad de su pregunta,
+      // como la respuesta de la oración, tiene más casillas y más desarrollo)
+      const phrase = (L, u, head, climaxAt, climax, pre, approach, close) => {
+        const S = L / u;
+        const hl = head.length;
+        const hold = S > 8 ? 2 : 1;                                   // casillas de reposo final
+        const s = new Array(S).fill(null);
+        head.forEach((v, j) => { s[j] = v; });
+        s[climaxAt] = climax;
+        if (pre !== null) s[S - 2 - hold] = pre;
+        s[S - 1 - hold] = approach;
+        for (let k = S - hold; k < S; k++) s[k] = close;
+        for (let k = hl; k < S - 1 - hold; k++) {
+          if (s[k] !== null) continue;
+          let b = k + 1;
+          while (s[b] === null) b++;
+          s[k] = s[k - 1] + (s[b] - s[k - 1]) / (b - k + 1) + (Math.random() < 0.4 ? pickRandom([-1, 1]) : 0);
+        }
+        const out = [];
+        for (let k = 0; k < S; k++) {
+          for (let j = 0; j < u; j++) {
+            if (k < hl || k === S - 1 - hold) out.push(s[k]);
+            else if (k >= S - hold) out.push(u > 3 && j === 0 ? s[k - 1] : s[k]);   // reposo de 1-3 posiciones
+            else out.push(s[k] + (s[k + 1] - s[k]) * j / u + (Math.random() - 0.5) * 0.3);
+          }
+        }
+        return out;
+      };
+      const question = (L, low) => {
+        const head = makeHead(3 + Math.floor(Math.random() * 2), low === 'head');
+        // Clímax contenido si el registro grave no viene de un hundimiento, para
+        // no desequilibrar el ámbito alrededor de la tónica
+        const climax = Math.max(Math.max(...head) + 1, 3 + Math.floor(Math.random() * (low === 'dip' ? 3 : 2)));
+        const open = low === 'open' ? -3 : weighted([[4, 3], [1, 3], [-3, 1.5], [2, 1], [6, 0.5]]);
+        const approach = climax > open ? open + 1 : open - 1;
+        let at = head.length === 3 && Math.random() < 0.5 ? 3 : 4;
+        if (Math.abs(climax - approach) <= 2 && Math.random() < 0.5) at = 5;
+        const u = L / 8;
+        return { curve: phrase(L, u, head, at, climax, null, approach, open), u, head, climax, open };
+      };
+      const answer = (L, q, parallel, low) => {
+        let head;
+        if (!parallel) head = makeHead(q.head.length);
+        else {
+          const mode = weighted([['literal', 7.5], ['sequence', 1.75], ['inverted', 0.75]]);
+          if (mode === 'literal') head = q.head.slice();
+          else if (mode === 'sequence') head = q.head.map(v => v + pickRandom([-2, -1, 1, 2]));
+          else head = q.head.map(v => 2 * q.head[0] - v);
+        }
+        const intensify = Math.random() < 0.5;
+        const climax = Math.max(Math.max(...head), intensify
+          ? q.climax + 1 + (low === 'dip' ? Math.floor(Math.random() * 2) : 0)
+          : q.climax - Math.floor(Math.random() * 2));
+        const type = low === 'dip' ? 'below' : low === 'dominant' ? 'dominant-low'
+          : weighted([['above', 4], ['below', 3], ['dominant', 1.5], ['dominant-low', 1.5]]);
+        let approach;
+        let pre;
+        if (type === 'above') { approach = 1; pre = 2; }
+        else if (type === 'below') { approach = -1; pre = -Math.round(q.climax * (0.6 + Math.random() * 0.4)); }
+        else if (type === 'dominant') { approach = 4; pre = 5; }
+        else { approach = -3; pre = -2; }
+        return phrase(L, q.u, head, head.length, climax, pre, approach, 0);
+      };
+      const period = (size) => {
+        const low = weighted([['dip', 4], ['open', 2.5], ['dominant', 2], ['head', 1.5]]);
+        const q = question(size / 2, low);
+        return q.curve.concat(answer(size / 2, q, Math.random() < 0.8, low));
+      };
+      // Oración: pregunta, pregunta repetida (literal o en secuencia) y
+      // respuesta del doble de largo
+      const sentence = (size) => {
+        const low = weighted([['dip', 4], ['open', 2.5], ['dominant', 2], ['head', 1.5]]);
+        const q = question(size / 4, low);
+        let again = q.curve;
+        if (Math.random() < 0.5) {
+          const t = q.open + 2 > 6 ? -1 : pickRandom([1, 2]);
+          again = q.curve.map(v => v + t);
+        }
+        return q.curve.concat(again, answer(size / 2, q, Math.random() < 0.8, low));
+      };
+
+      const N = Math.max(16, n);
+      const made = {};
+      let out = [];
+      for (let rem = N; rem > 0;) {
+        const opts = [[[16, 'p'], rem >= 32 ? 1 : 10]];
+        if (rem >= 32) opts.push([[32, 'p'], 4.5], [[32, 's'], 3]);
+        if (rem >= 64) opts.push([[64, 'p'], 1.5], [[64, 's'], 1]);
+        const [size, kind] = weighted(opts);
+        const id = size + kind;
+        if (!made[id] || Math.random() < 0.5) made[id] = kind === 'p' ? period(size) : sentence(size);
+        out = out.concat(made[id]);
+        rem -= size;
+      }
+      let M = 0.5;
+      let m = -0.5;
+      for (const v of out) {
+        if (v > M) M = v;
+        if (v < m) m = v;
+      }
+      const f = Math.sqrt(M / -m);
+      return out.slice(0, n).map(v => v >= 0 ? v / f : v * f);
+    },
+
+    // Helecho: sistema L sobre intervalos. Un axioma de 2-4 intervalos se
+    // reescribe con reglas sorteadas de un pool curado (cada símbolo expandido
+    // reproduce su patrón, así que las mismas ramas vuelven a escalas
+    // distintas) y la cadena se integra en alturas; cuando la línea toca el
+    // borde la fronda se dobla (los intervalos se invierten) en vez de rebotar
+    helecho(n) {
+      // Intervalos en grados: + − (conjuntos), ^ v (terceras), . (repetida), J j (saltos)
+      const RULES = {
+        '+': ['+-+', '++v', '+.+', '^-'],
+        '-': ['-+-', '--^', '-.-', 'v+'],
+        '^': ['++', '^-.', '+.+'],
+        'v': ['--', 'v+.', '-.-'],
+        '.': ['+-', '-+', '.', '..'],
+        'J': ['J--', '+J', 'J-.'],
+        'j': ['j++', '-j', 'j+.']
+      };
+      const AXIOMS = ['++-', '^--', 'J---', '+.-', '+-', '++-v', 'j++', '+^-.', '-+^', '+J-', 'v+.+'];
+      const grow = () => {
+        const leap = pickRandom([3, 4]);
+        const step = { '+': 1, '-': -1, '^': 2, 'v': -2, '.': 0, 'J': leap, 'j': -leap };
+        const rule = {};
+        const alt = {};
+        for (const s in RULES) {
+          rule[s] = pickRandom(RULES[s]);
+          alt[s] = pickRandom(RULES[s]);
+        }
+        const stochastic = Math.random() < 0.3 ? 0.12 : 0;       // alguna rama se aparta de la regla
+        let str = pickRandom(AXIOMS);
+        for (let it = 0; it < 8 && str.length < n; it++) {
+          let next = '';
+          for (const s of str) {
+            next += stochastic && Math.random() < stochastic ? alt[s] : rule[s];
+            if (next.length >= 4 * n) break;
+          }
+          str = next;
+        }
+        while (str.length < n) str += str;                        // reglas que no crecen ('.' → '.')
+        const seq = [...str.slice(0, n)];
+        if (Math.random() < 0.15) seq.reverse();                  // retrógrado
+        const bound = 7 + Math.random() * 1.5;
+        let sign = Math.random() < 0.5 ? 1 : -1;                  // espejo
+        const out = [];
+        let v = (Math.random() - 0.5) * 4;
+        for (let i = 0; i < n; i++) {
+          out.push(v);
+          let next = v + sign * step[seq[i]];
+          if (next > bound || next < -bound) {
+            sign = -sign;
+            next = v + sign * step[seq[i]];
+          }
+          v = next;
+        }
+        return out;
+      };
+      // Reglas equilibradas (+ → + - +, - → - + -) dan una fronda casi plana
+      // que la normalización estiraría: se re-sortea hasta un ámbito propio
+      let best = null;
+      let bestSpan = -1;
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const out = grow();
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const x of out) {
+          if (x < lo) lo = x;
+          if (x > hi) hi = x;
+        }
+        if (hi - lo >= 10) return out;
+        if (hi - lo > bestSpan) {
+          bestSpan = hi - lo;
+          best = out;
+        }
+      }
+      return best;
     }
   };
 
@@ -409,6 +1121,12 @@ const Generator = (() => {
       if (v > max) max = v;
     }
     const span = max - min || 1;
+    // Una curva que ya viene en grados exactos (ámbito 9–14 dentro del rango)
+    // se respeta tal cual: reescalarla o descentrarla rompería terceras,
+    // transportes y la tónica final de los contornos que piensan en grados
+    if (span >= 9 && span <= 14 && min >= -7.5 && max <= 7.5) {
+      return raw.map(v => Math.max(-7, Math.min(7, Math.round(v))));
+    }
     const targetSpan = 9 + Math.random() * 5;
     const center = (Math.random() - 0.5) * 3;
     return raw.map(v => {

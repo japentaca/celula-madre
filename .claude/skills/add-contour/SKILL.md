@@ -28,6 +28,12 @@ nombre(n) {
   no su escala absoluta. Una curva de amplitud 0.1 y una de amplitud 100 suenan
   igual; lo que no se puede es devolver una constante (span 0 degenera a línea
   plana, aunque no rompe: hay guarda `|| 1`).
+- **Excepción para contornos que piensan en grados** (`arpegio`, `escalera`,
+  `bordón`, `período`, `helecho`…): si la curva cruda ya tiene ámbito en
+  [9, 14] y cabe en [-7.5, 7.5], `normalizeContour` solo redondea, sin
+  reescalar ni descentrar. Así se conservan terceras, transportes exactos,
+  pedales y la tónica final en 0. Para acogerse, devolver valores en unidades
+  de grado con ese ámbito (y la tónica en 0 si importa dónde cae).
 - Puede asumir `n` potencia de 2 (como hace `fractal`), pero si no lo necesita,
   mejor no depender de ello.
 - Nombre en español y minúsculas, coherente con los existentes (`paseo`, `arco`,
