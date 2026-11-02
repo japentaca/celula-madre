@@ -41,7 +41,7 @@ durante la reproducción.
   reverb/delay, canal MIDI.
 - Editor de sintetizador por pista con cadena de efectos de inserción
   reordenable y presets de usuario (localStorage, export/import JSON).
-- Piano roll 2D con colores por motivo, y cuatro vistas 3D con bloom y
+- Piano roll 2D con colores por motivo, y cuatro vistas 3D con
   cámara con seguimiento: ciudad de notas, túnel helicoidal (una vuelta =
   una célula), terreno orgánico y constelación de partículas.
 - Salida Web MIDI con timestamps precisos y apagado limpio de notas al parar.

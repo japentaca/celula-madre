@@ -1,5 +1,5 @@
 // Vistas 3D de la grilla con THREE.js: trece modos que comparten renderer,
-// bloom, cursor, destello de las notas al sonar y seguimiento de cámara:
+// cursor, destello de las notas al sonar y seguimiento de cámara:
 // - «city»: ciudad de notas — tiempo en X, pistas en Z, altura tonal en Y.
 // - «tunnel»: túnel helicoidal — una vuelta = una célula, cada pista un
 //   anillo concéntrico, cámara por dentro.
@@ -47,10 +47,6 @@
 // <script type="module"> + importmap y publica su global en window a mano.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 window.Visualizer3D = (() => {
   // --- Ciudad ---
@@ -182,8 +178,6 @@ window.Visualizer3D = (() => {
   let scene = null;
   let camera = null;
   let controls = null;
-  let composer = null;
-  let bloomPass = null;
   let clock = null;
   let resizeObserver = null;
 
@@ -217,7 +211,6 @@ window.Visualizer3D = (() => {
   let cursorSnap = true;      // primer setCursor tras rebuild: sin animación
   let cursorStepLast = -1;
   let follow = true;
-  let bloomOn = true;         // conmutable desde el topbar: setBloom
   let insideView = true;      // túnel: «Encuadrar» alterna interior/exterior; Möbius: en raíl/vista general
   let dimsKey = '';           // modo+dimensiones de la última pieza encuadrada
 
@@ -658,9 +651,9 @@ window.Visualizer3D = (() => {
       float f = ${ST_FREQ.toFixed(2)} + uNodes[t] * ${ST_FREQ_NODE.toFixed(2)};
       vec3 p = position;
       p.y += energy * shape * sin(2.0 * PI * f * max(dt, 0.0));
-      // la cinta engorda al vibrar: más superficie para el bloom
+      // la cinta engorda al vibrar: más superficie encendida
       p.y += aEdge * ${(ST_W / 2).toFixed(3)} * (1.0 + 2.5 * energy);
-      // reposo gris tenue (bajo el umbral del bloom); al sonar, el color del
+      // reposo gris tenue; al sonar, el color del
       // motivo, más intenso en los vientres de la onda
       vColor = vec3(0.12) * (1.0 - 0.5 * min(energy, 1.0))
         + uColor[t] * energy * (0.8 + 1.6 * abs(shape));
@@ -904,13 +897,6 @@ window.Visualizer3D = (() => {
     controls.addEventListener('end', () => { interacting = false; lastMotionAt = performance.now(); });
     controls.addEventListener('change', () => { lastMotionAt = performance.now(); });
 
-    composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
-    bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.8, 0.35, 0.5);
-    bloomPass.enabled = bloomOn;
-    composer.addPass(bloomPass);
-    composer.addPass(new OutputPass());
-
     clock = new THREE.Clock();
 
     buildOverlay();
@@ -969,13 +955,6 @@ window.Visualizer3D = (() => {
     const w = Math.max(1, container.clientWidth);
     const h = Math.max(1, container.clientHeight);
     renderer.setSize(w, h);
-    composer.setSize(w, h);
-    // Bloom más barato: composer.setSize acaba de dejar cada pase al tamaño
-    // completo × pixelRatio, así que se reajusta después. UnrealBloomPass ya
-    // divide por 2 internamente: con este /2 su primer nivel queda a 1/4 del
-    // lienzo (antes 1/2); medido, el halo apenas cambia
-    const pr = renderer.getPixelRatio();
-    bloomPass.setSize(w * pr / 2, h * pr / 2);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     dirty = true;
@@ -2180,7 +2159,7 @@ window.Visualizer3D = (() => {
     const zBack = -depth;
     const zc = -depth / 2;
     const colors = motifColors();
-    // crema atenuado: queda bajo el umbral del bloom (0.5)
+    // crema atenuado para que no deslumbre
     const paper = srgb(214, 200, 170).multiplyScalar(0.35);
 
     // El rodillo lector es metal estándar y necesita luces (como en la caja
@@ -4142,13 +4121,6 @@ window.Visualizer3D = (() => {
     if (piece && renderer) buildScene();
   }
 
-  // El bloom realza lo aditivo pero en algunos modos ahoga las notas; se puede
-  // apagar sin reconstruir nada: el composer salta el pase deshabilitado
-  function setBloom(on) {
-    bloomOn = !!on;
-    if (bloomPass) bloomPass.enabled = bloomOn;
-    dirty = true;
-  }
 
   function renderPiece(p) {
     piece = p;
@@ -4347,7 +4319,7 @@ window.Visualizer3D = (() => {
     if (mode === 'galaxy' && gal) tickGalaxy();
     if (mode === 'swarm' && sw) tickSwarm(dt);
 
-    // Damping y seguimiento avanzan en cada frame; el render (con bloom) baja a
+    // Damping y seguimiento avanzan en cada frame; el render baja a
     // ~30 fps en reposo. Las animaciones de reposo dependen de uTime, que sigue
     // el reloj real, así que solo pierden fluidez
     controls.update();
@@ -4362,8 +4334,8 @@ window.Visualizer3D = (() => {
     for (const m of shaderMats) {
       if (m.uniforms.uTime) m.uniforms.uTime.value = clock.elapsedTime;
     }
-    composer.render();
+    renderer.render(scene, camera);
   }
 
-  return { init, renderPiece, setCursor, clearCursor, setActive, setMode, setBloom };
+  return { init, renderPiece, setCursor, clearCursor, setActive, setMode };
 })();
