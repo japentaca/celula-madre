@@ -47,13 +47,26 @@
 
     <div class="view-pick">
       <label for="select-view">Vista</label>
-      <select id="select-view" title="Visualización de la grilla: piano roll 2D, ciudad de notas, túnel helicoidal (una vuelta = una célula), terreno orgánico o constelación de partículas">
+      <select id="select-view" title="Visualización de la grilla: piano roll 2D, ciudad de notas, túnel helicoidal (una vuelta = una célula), terreno orgánico, constelación de partículas, caja de música (rodillos con pinos que empujan las púas de un peine), órbita de quintas (faros en el ciclo de quintas y una nave que orbita el de cada sección), pianola (rollo de papel perforado: agujero = nota, un lector con lámpara los enciende y proyecta su luz en el suelo), telar (cada pista un hilo de urdimbre que sube con la altura, liso si liga y en puntadas si pica; bloques como tramas de color y la lanzadera como cursor), arpa (una cuerda por pista que cada nota pulsa: vibra con nodos según la altura y se apaga según el sustain; una regla de tiempo con las secciones lleva el cursor), galaxia (la pieza entera enrollada en espiral vista desde arriba: radio = tiempo, un brazo por pista, una estrella por nota; un brazo de radar barre, lo sonado queda cálido y lo por venir frío), jardín (cada nota una flor que brota al llegar el cursor: tallo = altura, corola = velocity, especie = motivo, hoja = duración; las secciones son parterres y la recapitulación florece en ámbar), enjambre (una bandada de partículas por pista que vuela a la altura de su melodía, se compacta con la densidad de ataques, destella con cada nota y se dispersa en el silencio), cinta de Möbius (la pieza entera en una vuelta de la cinta, pistas a lo ancho; la cámara la recorre en raíl y termina donde empezó, por la otra cara)">
         <option value="2d">Piano roll</option>
         <option value="city">Ciudad</option>
         <option value="tunnel">Túnel</option>
         <option value="terrain">Terreno</option>
         <option value="stars">Constelación</option>
+        <option value="musicbox">Caja de música</option>
+        <option value="fifths">Órbita de quintas</option>
+        <option value="pianola">Pianola</option>
+        <option value="loom">Telar</option>
+        <option value="strings">Arpa</option>
+        <option value="galaxy">Galaxia</option>
+        <option value="garden">Jardín</option>
+        <option value="swarm">Enjambre</option>
+        <option value="mobius">Möbius</option>
       </select>
+      <label class="bloom-toggle hidden" for="checkbox-bloom" title="Resplandor (bloom) del render 3D; apágalo si tapa las notas en alguna vista">
+        <span>Bloom</span>
+        <input type="checkbox" id="checkbox-bloom" checked>
+      </label>
     </div>
   </header>
 

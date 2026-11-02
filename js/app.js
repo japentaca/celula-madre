@@ -5,7 +5,7 @@ const App = (() => {
     trackSettings: [],
     // Preset efectivo de cada pista en la pieza actual (resuelto cuando la elección es aleatoria)
     resolvedPresets: [],
-    // Vista activa de la grilla ('2d' | 'city' | 'tunnel' | 'terrain' | 'stars') y último paso del
+    // Vista activa de la grilla ('2d' | 'city' | 'tunnel' | 'terrain' | 'stars' | 'musicbox' | 'fifths' | 'pianola' | 'loom' | 'strings' | 'galaxy' | 'garden' | 'swarm' | 'mobius') y último paso del
     // cursor, para reponerlo al conmutar de vista en plena reproducción
     view: '2d',
     cursorStep: -1,
@@ -45,6 +45,7 @@ const App = (() => {
     const is3d = view !== '2d';
     document.getElementById('grid-container').classList.toggle('hidden', is3d);
     document.getElementById('viz3d-container').classList.toggle('hidden', !is3d);
+    document.querySelector('.bloom-toggle').classList.toggle('hidden', !is3d);
     if (window.Visualizer3D) {
       if (is3d) {
         Visualizer3D.init('viz3d-container');
@@ -120,8 +121,21 @@ const App = (() => {
     el.dispatchEvent(new Event(eventType, { bubbles: true }));
   }
 
+  // Primera visita (nada guardado): todo lo que admite azar arranca en azar.
+  // Forma, preset y contornos ya lo hacen por defecto en el HTML
+  function applyRandomDefaults() {
+    for (const name of RANDOM_RANGES) setControl(`checkbox-${name}-random`, true, 'change');
+    setControl('select-form', 'random', 'change');
+    setControl('select-preset', 'random', 'change');
+    setControl('select-scale', 'random', 'change');
+    setControl('select-key', 'random', 'change');
+  }
+
   function restoreSettings(saved) {
-    if (!saved) return;
+    if (!saved) {
+      applyRandomDefaults();
+      return;
+    }
     const ui = saved.ui || {};
     setControl('slider-tempo', ui.tempo, 'input');
     setControl('slider-tracks', ui.numTracks, 'input');
@@ -144,6 +158,7 @@ const App = (() => {
     setControl('checkbox-autorestart', ui.autorestart, 'change');
     setControl('checkbox-kiosk', ui.kiosk, 'change');
     setControl('checkbox-audio', saved.audioEnabled, 'change');
+    setControl('checkbox-bloom', ui.bloom, 'change');
     // compat: sesiones guardadas antes del selector de vista usaban viz3d bool
     const savedView = ui.view || (ui.viz3d ? 'city' : '2d');
     if (savedView !== '2d') setView(savedView);
@@ -268,7 +283,8 @@ const App = (() => {
       autogen: document.getElementById('checkbox-autogen').checked,
       autorestart: document.getElementById('checkbox-autorestart').checked,
       kiosk: document.getElementById('checkbox-kiosk').checked,
-      view: state.view
+      view: state.view,
+      bloom: document.getElementById('checkbox-bloom').checked
     };
     for (const name of RANDOM_RANGES) {
       ui[`${name}Random`] = document.getElementById(`checkbox-${name}-random`).checked;
@@ -436,6 +452,9 @@ const App = (() => {
     document.getElementById('btn-play').addEventListener('click', togglePlay);
     document.getElementById('btn-stop').addEventListener('click', stop);
     document.getElementById('select-view').addEventListener('change', e => setView(e.target.value));
+    document.getElementById('checkbox-bloom').addEventListener('change', e => {
+      if (window.Visualizer3D) Visualizer3D.setBloom(e.target.checked);
+    });
 
     // Tonalidad y escala se aplican en vivo sobre la pieza actual. Elegir
     // "Aleatoria" no toca la pieza en curso: el sorteo ocurre al generar

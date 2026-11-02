@@ -469,6 +469,17 @@ body.is-playing .btn-play {
   min-width: 128px;
 }
 
+.bloom-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.bloom-toggle.hidden {
+  display: none;
+}
+
 /* ==== Barra de la pieza: tonalidad, datos, tiempo y secciones ==== */
 
 #piece-bar {
