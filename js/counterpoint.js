@@ -127,6 +127,7 @@ const Counterpoint = (() => {
         let fixed = false;
         for (const delta of [-1, 1]) {
           const degree = cell.degree + delta;
+          if (degree < -7 || degree > 7) continue;
           const midi = midiFor(ctx, degree, cell.keyOffset);
           const cand = { degree, midi };
           if (accepted.every(o => !isDissonant(cand, o.cell, scaleLen) && o.cell.midi !== midi)) {
@@ -153,13 +154,18 @@ const Counterpoint = (() => {
         const cell = a.cell;
         if (cell.velocity <= GHOST_VELOCITY) continue;
         if (taken.has(cell.midi) && !passing.has(cell)) {
+          // La octava se escribe en grados de la escala actual: fuera de
+          // [-7, 7] (invariante 3) un retune a una escala de otro largo la
+          // convertiría en un salto de registro. Si no cabe, queda el unísono
+          const canUp = cell.degree + scaleLen <= 7;
+          const canDown = cell.degree - scaleLen >= -7;
           const up = midiFor(ctx, cell.degree + scaleLen, cell.keyOffset);
           const down = midiFor(ctx, cell.degree - scaleLen, cell.keyOffset);
-          if (!taken.has(up) && up <= 96) {
+          if (canUp && !taken.has(up) && up <= 96) {
             cell.degree += scaleLen;
             cell.midi = up;
             stats.unisons++;
-          } else if (!taken.has(down) && down >= 36) {
+          } else if (canDown && !taken.has(down) && down >= 36) {
             cell.degree -= scaleLen;
             cell.midi = down;
             stats.unisons++;

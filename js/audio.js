@@ -185,7 +185,11 @@ const AudioEngine = (() => {
         synth: makeSynth(cfg.preset),
         presetName: typeof cfg.preset === 'string' ? cfg.preset : cfg.preset.base,
         chain: buildChain(cfg.preset),
-        panner, channel, revSend, delSend
+        panner, channel, revSend, delSend,
+        // Niveles del usuario: fadeOutTracks los baja y restoreTrackLevels
+        // vuelve a ellos
+        levels: { channel: cfg.volume, revSend: cfg.reverb, delSend: cfg.delay },
+        faded: false
       };
       wireTrack(track);
       return track;
@@ -240,16 +244,57 @@ const AudioEngine = (() => {
     if (node) node.set(params);
   }
 
+  // Durante la coda solo se guarda el nivel: aplicarlo cortaría el fundido
+  function setTrackLevel(index, node, value) {
+    const track = tracks[index];
+    if (!track) return;
+    track.levels[node] = value;
+    if (!track.faded) track[node].gain.value = value;
+  }
+
   function setTrackVolume(index, value) {
-    if (tracks[index]) tracks[index].channel.gain.value = value;
+    setTrackLevel(index, 'channel', value);
   }
 
   function setTrackReverb(index, value) {
-    if (tracks[index]) tracks[index].revSend.gain.value = value;
+    setTrackLevel(index, 'revSend', value);
   }
 
   function setTrackDelay(index, value) {
-    if (tracks[index]) tracks[index].delSend.gain.value = value;
+    setTrackLevel(index, 'delSend', value);
+  }
+
+  const LEVEL_NODES = ['channel', 'revSend', 'delSend'];
+
+  // Coda del final de pieza: baja canal y envíos de cada pista; los buses de
+  // reverb y delay siguen y dejan su cola natural
+  function fadeOutTracks(time, seconds) {
+    for (const track of tracks) {
+      track.faded = true;
+      for (const node of LEVEL_NODES) {
+        try {
+          const gain = track[node].gain;
+          gain.cancelScheduledValues(time);
+          gain.setValueAtTime(gain.getValueAtTime(time), time);
+          gain.linearRampToValueAtTime(0, time + seconds);
+        } catch (e) { /* ignore */ }
+      }
+    }
+  }
+
+  function restoreTrackLevels(time) {
+    const at = time === undefined ? Tone.now() : time;
+    for (const track of tracks) {
+      if (!track.faded) continue;
+      track.faded = false;
+      for (const node of LEVEL_NODES) {
+        try {
+          const gain = track[node].gain;
+          gain.cancelScheduledValues(at);
+          gain.rampTo(track.levels[node], 0.05, at);
+        } catch (e) { /* ignore */ }
+      }
+    }
   }
 
   function setTrackPan(index, value) {
@@ -325,6 +370,8 @@ const AudioEngine = (() => {
     setTrackChain,
     setTrackEffectParams,
     setTrackVolume,
+    fadeOutTracks,
+    restoreTrackLevels,
     setTrackReverb,
     setTrackDelay,
     setTrackPan,

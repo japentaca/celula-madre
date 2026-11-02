@@ -28,7 +28,10 @@ const Humanizer = (() => {
           } else if (roll < 0.7) {
             cell.velocity = Math.max(0.05, cell.velocity * 0.35);
           } else if (s > marker.startStep && !row[s - 1]) {
-            const degree = cell.degree + (Math.random() < 0.5 ? -1 : 1);
+            // Vecina por arriba o por abajo, la que quede en [-7, 7]
+            let dir = Math.random() < 0.5 ? -1 : 1;
+            if (Math.abs(cell.degree + dir) > 7) dir = -dir;
+            const degree = cell.degree + dir;
             row[s - 1] = {
               midi: midiFor(ctx, degree, cell.keyOffset),
               degree,
@@ -143,6 +146,78 @@ const Humanizer = (() => {
     }
   }
 
+  // Grados de la tríada de tónica en la escala: el índice cuyo intervalo queda
+  // más cerca de la tercera (3-4 semitonos) y de la quinta (7). Sirve para
+  // pentatónicas y cromática, donde los grados 2 y 4 no son tercera y quinta
+  function tonicTriad(scale) {
+    const intervals = Generator.SCALES[scale] || Generator.SCALES.major;
+    const nearest = target => {
+      let best = 0;
+      intervals.forEach((iv, idx) => {
+        if (Math.abs(iv - target) < Math.abs(intervals[best] - target)) best = idx;
+      });
+      return best;
+    };
+    return { size: intervals.length, degrees: [0, nearest(3.5), nearest(7)] };
+  }
+
+  function nearestDegree(degree, pool, size) {
+    let best = degree;
+    let bestDist = Infinity;
+    for (const d of pool) {
+      for (let k = -2; k <= 2; k++) {
+        const c = d + k * size;
+        if (c < -7 || c > 7) continue;
+        const dist = Math.abs(c - degree);
+        if (dist < bestDist) {
+          best = c;
+          bestDist = dist;
+        }
+      }
+    }
+    return best;
+  }
+
+  // Final de la pieza: diminuendo sobre las últimas células y, en la última,
+  // la nota final de cada pista se posa en la tríada de tónica (la que ataca
+  // más tarde, en la tónica misma) y queda ligada y marcada `final` para que
+  // el transporte la deje sonar en la coda (Composer.ENDING_TAIL_STEPS)
+  function shapeEnding(ctx) {
+    const { grid, totalSteps, cellLength } = ctx;
+    const window = Math.min(totalSteps, Math.max(cellLength, Math.floor(totalSteps / 8)), cellLength * 2);
+    const from = totalSteps - window;
+    for (const row of grid) {
+      for (let s = from; s < totalSteps; s++) {
+        const cell = row[s];
+        if (!cell) continue;
+        const p = (s - from) / window;
+        cell.velocity = Math.max(0.05, cell.velocity * (1 - 0.45 * p * p));
+      }
+    }
+
+    const lastCellStart = Math.max(0, totalSteps - cellLength);
+    const finals = [];
+    grid.forEach((row, t) => {
+      for (let s = totalSteps - 1; s >= lastCellStart; s--) {
+        if (row[s]) {
+          finals.push({ t, s, cell: row[s] });
+          return;
+        }
+      }
+    });
+    if (!finals.length) return;
+    const triad = tonicTriad(ctx.scale);
+    const latest = finals.reduce((a, b) => (b.s > a.s ? b : a));
+    for (const f of finals) {
+      const pool = f === latest ? [0] : triad.degrees;
+      f.cell.degree = nearestDegree(f.cell.degree, pool, triad.size);
+      f.cell.midi = midiFor(ctx, f.cell.degree, f.cell.keyOffset);
+      f.cell.sustain = 1;
+      f.cell.velocity = Math.max(f.cell.velocity, 0.3);
+      f.cell.final = true;
+    }
+  }
+
   // ctx: { grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key }
   // Debe correr tras colocar los motivos y ANTES de calcular duraciones (añade
   // y quita notas, así que los huecos cambian). Solo escribe grados y deja que
@@ -154,6 +229,7 @@ const Humanizer = (() => {
     shapeArticulation(ctx, blockMap);
     shapeDynamics(ctx);
     addBreaths(ctx);
+    shapeEnding(ctx);
   }
 
   return { humanize };

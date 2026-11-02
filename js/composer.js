@@ -5,6 +5,9 @@ const Composer = (() => {
   let currentStep = 0;
 
   const STEP = '16n';
+  // Coda tras el último paso: las notas finales (`cell.final`, Humanizer)
+  // se alargan esto y las pistas se desvanecen en ese tiempo
+  const ENDING_TAIL_STEPS = 16;
   // Repeticiones totales de célula por sección (potencias de 2) cuando no hay
   // plan de duración (planDuration)
   const SECTION_REPEAT_CHOICES = [2, 4];
@@ -360,9 +363,24 @@ const Composer = (() => {
     if (currentStep >= piece.totalSteps) currentStep = 0;
 
     Tone.Transport.cancel();
+    // Los niveles se reponen al reanudar y no al parar: al acabar la coda
+    // aún pueden quedar releases largos que volverían de golpe
+    AudioEngine.restoreTrackLevels();
+    let fading = false;
     repeatEventId = Tone.Transport.scheduleRepeat(time => {
       const step = currentStep;
+      const stepSeconds = Tone.Time(STEP).toSeconds();
+      // Coda: el transporte sigue ENDING_TAIL_STEPS pasos sin notas nuevas
+      // mientras las notas finales suenan y las pistas se desvanecen; reverb y
+      // delay no se tocan y conservan su cola. Cortar en el último paso daba
+      // un golpe seco con los ecos colgando
       if (step >= piece.totalSteps) {
+        if (step === piece.totalSteps) {
+          fading = true;
+          AudioEngine.fadeOutTracks(time, ENDING_TAIL_STEPS * stepSeconds);
+        }
+        currentStep++;
+        if (step < piece.totalSteps + ENDING_TAIL_STEPS) return;
         Tone.Draw.schedule(() => {
           if (!isPlaying) return;
           stop();
@@ -370,12 +388,17 @@ const Composer = (() => {
         }, time);
         return;
       }
+      // Un seek durante la coda vuelve a la pieza: niveles de vuelta
+      if (fading) {
+        fading = false;
+        AudioEngine.restoreTrackLevels(time);
+      }
       currentStep++;
 
       // Factor 0.95 para que sintes monofónicos no pisen el retrigger en legato
-      const stepSeconds = Tone.Time(STEP).toSeconds();
       for (const { trackIndex, cell } of piece.stepEvents[step]) {
-        const duration = cell.durationSteps * stepSeconds * 0.95;
+        const steps = cell.durationSteps + (cell.final ? ENDING_TAIL_STEPS : 0);
+        const duration = steps * stepSeconds * 0.95;
         const velocity = shapeVelocity(cell.velocity);
         AudioEngine.playNote(trackIndex, cell.midi, time, duration, velocity);
         MidiEngine.playNote(trackIndex, cell.midi, time, duration, velocity);
