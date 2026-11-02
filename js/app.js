@@ -198,6 +198,13 @@ const App = (() => {
     const select = document.getElementById('select-midi-out');
     const audioCheckbox = document.getElementById('checkbox-audio');
     audioCheckbox.addEventListener('change', () => AudioEngine.setEnabled(audioCheckbox.checked));
+    // Elegir un puerto MIDI apaga el audio web (el VST toma el relevo) y
+    // quitarlo lo vuelve a encender; el usuario puede re-marcarlo para doblar
+    const setAudio = on => {
+      if (audioCheckbox.checked === on) return;
+      audioCheckbox.checked = on;
+      audioCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+    };
 
     if (!MidiEngine.isSupported()) {
       select.disabled = true;
@@ -231,6 +238,11 @@ const App = (() => {
           pendingOutput = null;
         }
       } else {
+        // el puerto activo se desconectó: sin él la música quedaría muda
+        if (current && current !== pendingOutput) {
+          MidiEngine.selectOutput(null);
+          setAudio(true);
+        }
         select.value = '';
       }
     };
@@ -249,6 +261,7 @@ const App = (() => {
       // una elección manual anula la restauración pendiente
       pendingOutput = null;
       MidiEngine.selectOutput(select.value || null);
+      setAudio(!select.value);
     });
   }
 
