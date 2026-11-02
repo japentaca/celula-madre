@@ -387,6 +387,23 @@ const App = (() => {
         dialog.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - dialog.offsetWidth - 8))}px`;
       });
     });
+    // La guía es un modal centrado; solo su apartado «En esta pieza» depende
+    // de la pieza, y se rehace en cada apertura
+    const guide = document.getElementById('dlg-guide');
+    const guideBtn = document.querySelector('#topbar [popovertarget="dlg-guide"]');
+    guide.addEventListener('toggle', event => {
+      const open = event.newState === 'open';
+      guideBtn.classList.toggle('dialog-open', open);
+      if (open) renderGuidePiece();
+    });
+    // los enlaces del índice desplazan el texto sin tocar el hash de la URL
+    guide.querySelector('.guide-toc').addEventListener('click', event => {
+      const link = event.target.closest('a');
+      if (!link) return;
+      event.preventDefault();
+      const target = guide.querySelector(link.getAttribute('href'));
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   function setupUI(saved) {
@@ -574,6 +591,7 @@ const App = (() => {
     // rebobina a 0); si no, vizRefresh (retune, resize, vista) lo repondría
     state.cursorStep = -1;
     state.piece.contour = motherCell.contour;
+    state.piece.motifContours = motifs.map(m => m.contour);
     const extraContours = [...new Set(motifs.slice(1).map(m => m.contour).filter(c => c !== motherCell.contour))];
     const contourInfo = extraContours.length ? `${motherCell.contour} (variaciones: ${extraContours.join(', ')})` : motherCell.contour;
     const tonalPlan = state.piece.sections.map(s => s.fifthOffset).join(' → ');
@@ -837,6 +855,44 @@ const App = (() => {
     }).join('') + '<div class="section-fill"></div><div class="section-head"></div>';
 
     updatePosition(Composer.getIsPlaying() || state.cursorStep >= 0 ? state.cursorStep : -1);
+  }
+
+  // Apartado «En esta pieza» de la guía: la teoría aplicada a lo que suena
+  function renderGuidePiece() {
+    const el = document.getElementById('guide-piece');
+    const piece = state.piece;
+    if (!piece) {
+      el.innerHTML = '<p class="guide-empty">Aún no hay pieza: pulsa Generar y vuelve a abrir la guía.</p>';
+      return;
+    }
+    const form = piece.sections.map(s => s.label).join('–');
+    const letters = [...new Set(piece.sections.map(s => s.label))];
+    const contours = piece.motifContours || [piece.contour];
+    const otherContours = [...new Set(contours.slice(1).filter(c => c && c !== piece.contour))];
+    const peak = Math.max(...piece.sections.map(s => Math.abs(s.fifthOffset || 0)));
+    const dir = piece.sections.some(s => s.fifthOffset > 0) ? 'sostenidos' : 'bemoles';
+    const recap = piece.sections.find(s => s.recap);
+    const facts = [
+      ['Forma', `${form} — ${piece.sections.length} secciones con ${letters.length} materiales distintos (${letters.join(', ')})`],
+      ['Tonalidad', `${keyName(piece.key)} ${optionText('select-scale', piece.scale).toLowerCase()}`],
+      ['Célula', `${piece.cellLength} pasos (${piece.cellLength / 16} ${piece.cellLength === 16 ? 'compás' : 'compases'} de 4/4)`],
+      ['Contorno', capitalize(piece.contour || '—') + (otherContours.length ? `; variaciones recontorneadas con ${otherContours.map(capitalize).join(', ')}` : '')],
+      ['Motivos', `${contours.length}: la madre y ${contours.length - 1} variaciones`],
+      ['Pistas', String(piece.numTracks)],
+      ['Duración', `${formatTime(piece.totalSteps * stepSeconds())} a ♩=${getUIState().tempo} (${piece.totalSteps} pasos)`],
+      ['Plan tonal', peak ? `hasta ${peak} ${peak === 1 ? 'quinta' : 'quintas'} hacia los ${dir}, de vuelta a la tónica` : 'sin modulación (pocas secciones)'],
+      ['Recapitulación', recap ? `sección ${recap.label} (la ${piece.sections.indexOf(recap) + 1}.ª), pista ${recap.recapTrack + 1}` : 'ninguna']
+    ];
+    const rows = piece.sections.map((s, i) => {
+      const fifths = s.fifthOffset ? `${s.fifthOffset > 0 ? '+' : '−'}${Math.abs(s.fifthOffset)}` : '0';
+      return `<tr${s.recap ? ' class="recap"' : ''}><td>${i + 1}</td><td><b>${escapeHtml(s.label)}</b></td>` +
+        `<td>${s.totalRepeats}×</td><td>${escapeHtml(keyName(piece.key + s.keyOffset))}</td><td>${fifths}</td>` +
+        `<td>${s.recap ? 'recapitulación' : ''}</td></tr>`;
+    }).join('');
+    el.innerHTML =
+      '<dl class="guide-facts">' + facts.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('') + '</dl>' +
+      '<table class="guide-sections"><thead><tr><th>#</th><th>Letra</th><th>Repeticiones</th><th>Tonalidad</th><th>Quintas</th><th></th></tr></thead>' +
+      `<tbody>${rows}</tbody></table>`;
   }
 
   let lastShownSecond = -1;

@@ -43,6 +43,7 @@
       <button popovertarget="dlg-generation" class="dialog-btn">Generación</button>
       <button popovertarget="dlg-effects" class="dialog-btn">Efectos</button>
       <button popovertarget="dlg-output" class="dialog-btn">Salida</button>
+      <button popovertarget="dlg-guide" class="guide-btn" title="Cómo se compone una pieza: célula, variaciones, forma, orquestación, plan tonal y pases" aria-label="Cómo funciona">?</button>
     </nav>
 
     <div class="view-pick">
@@ -252,6 +253,234 @@
         <input type="checkbox" id="checkbox-kiosk">
         <span class="dialog-val"></span>
       </div>
+    </div>
+  </div>
+  <!-- Guía de composición: modal centrado (popover auto: clic fuera o Esc
+       cierra). «En esta pieza» lo rellena App al abrir -->
+  <div id="dlg-guide" class="guide" popover>
+    <div class="dialog-header">
+      <span>Cómo se compone una pieza</span>
+      <button class="dialog-close" popovertarget="dlg-guide" popovertargetaction="hide">✕</button>
+    </div>
+    <div class="guide-body">
+      <nav class="guide-toc" aria-label="Apartados">
+        <a href="#g-idea">La idea</a>
+        <a href="#g-piece">En esta pieza</a>
+        <a href="#g-cell">Célula madre</a>
+        <a href="#g-contour">Contornos</a>
+        <a href="#g-var">Variaciones</a>
+        <a href="#g-form">Forma</a>
+        <a href="#g-orch">Orquestación</a>
+        <a href="#g-recap">Recapitulación</a>
+        <a href="#g-tonal">Plan tonal</a>
+        <a href="#g-passes">Pases</a>
+        <a href="#g-end">Duraciones y final</a>
+        <a href="#g-you">Lo que controlas</a>
+      </nav>
+      <article class="guide-text">
+        <section id="g-idea">
+          <h3>La idea</h3>
+          <p>Toda la pieza nace de una sola <b>célula</b>: un patrón corto de pasos
+          (16, 32 o 64 semicorcheas) donde cada paso suena o calla — de ahí
+          «binario». De esa célula madre salen variaciones, que se reparten entre
+          las pistas y se organizan en secciones según una <b>forma</b> (A–B–A…).</p>
+          <p>Nada se improvisa mientras suena: la pieza entera se compone
+          <b>antes de reproducir</b> y luego el transporte solo la lee paso a paso,
+          por eso las vistas pueden dibujarla completa desde el principio.</p>
+          <ol class="guide-flow">
+            <li><b>Forma</b><span>letras de sección</span></li>
+            <li><b>Plan de duración</b><span>largo de célula y repeticiones</span></li>
+            <li><b>Célula madre</b><span>ritmo, alturas, dinámica</span></li>
+            <li><b>Motivos</b><span>madre + variaciones</span></li>
+            <li><b>Orquestación</b><span>bloques por pista y sección</span></li>
+            <li><b>Plan tonal</b><span>viaje por quintas</span></li>
+            <li><b>Humanizador</b><span>superficie viva</span></li>
+            <li><b>Energía</b><span>densidad entre pistas</span></li>
+            <li><b>Contrapunto</b><span>consonancia vertical</span></li>
+            <li><b>Duraciones</b><span>legato y final</span></li>
+          </ol>
+        </section>
+
+        <section id="g-piece">
+          <h3>En esta pieza</h3>
+          <div id="guide-piece" class="guide-piece"></div>
+        </section>
+
+        <section id="g-cell">
+          <h3>La célula madre</h3>
+          <p>Cada paso guarda cuatro cosas: si hay <b>nota</b>, su <b>grado</b> de
+          escala (no semitonos: un entero de −7 a 7 alrededor de la tónica), su
+          <b>velocity</b> y su <b>sustain</b> (qué fracción del hueco hasta la
+          siguiente nota sostiene).</p>
+          <ul>
+            <li><b>Ritmo por valores de nota.</b> En lugar de echar una moneda en cada
+            paso, cada ataque o silencio ocupa un valor entero (1, 2, 3, 4, 6 u 8
+            semicorcheas). Así los huecos varían y aparecen notas tenidas, no solo
+            semicorcheas.</li>
+            <li><b>Respiración.</b> Una onda lenta recorre la célula: en la frase
+            activa pesan los valores cortos y las notas fuertes; en el reposo, los
+            largos y suaves.</li>
+            <li><b>Pulso.</b> Los valores que devuelven el siguiente ataque a un
+            tiempo (múltiplo de 4) pesan más, para que tras una síncopa el ritmo
+            vuelva al pulso; tiempos y cabezas de compás llevan un acento leve.</li>
+            <li><b>Legato.</b> Otra onda, desfasada, alterna tramos ligados y tramos
+            picados: la articulación dibuja frases en vez de ruido.</li>
+            <li><b>Densidad mínima.</b> Toda célula tiene al menos 3 ataques (o el
+            15 % de su largo); si no, se vuelve a sortear. Una célula casi vacía
+            repetida por una pista sola dejaría la música muda.</li>
+          </ul>
+        </section>
+
+        <section id="g-contour">
+          <h3>Contornos melódicos</h3>
+          <p>Las alturas siguen un <b>contorno</b>: un algoritmo que dibuja una
+          curva continua, que luego se ajusta a grados enteros en un ámbito de 9 a
+          14 grados. El selector «Contorno» de Generación limita cuáles entran en
+          el sorteo.</p>
+          <dl class="guide-defs">
+            <dt>Paseo</dt><dd>grados conjuntos con saltos ocasionales; rebota en los bordes.</dd>
+            <dt>Arco</dt><dd>sube a un clímax desplazado y desciende (o el valle inverso).</dd>
+            <dt>Onda</dt><dd>suma de 2–3 senos de periodos y fases al azar.</dd>
+            <dt>Gesto</dt><dd>un salto amplio y su recuperación por grados en sentido contrario.</dd>
+            <dt>Gravedad</dt><dd>paseo atraído hacia un centro tonal que deriva despacio.</dd>
+            <dt>Fractal</dt><dd>desplazamiento de punto medio: perfil autosimilar de cordillera.</dd>
+            <dt>Terrazas</dt><dd>mesetas que cambian de nivel a intervalos irregulares.</dd>
+            <dt>Espiral</dt><dd>oscilación que se abre o se cierra a lo largo de la célula.</dd>
+            <dt>Organismo</dt><dd>una semilla que muta frase a frase (transportar, espejo, retro, estirar…) según una tensión que deriva.</dd>
+            <dt>Mareas</dt><dd>tres paseos a escalas de tiempo distintas — corriente, oleaje y espuma — sumados.</dd>
+            <dt>Bandada</dt><dd>un pájaro dentro de un enjambre de boids, con sustos que viran a todos de golpe.</dd>
+          </dl>
+        </section>
+
+        <section id="g-var">
+          <h3>Variaciones (motivos)</h3>
+          <p>Los <b>motivos</b> son la célula madre (motivo 1) y varias variaciones
+          — al menos tantas como pistas. Cada variación aplica una o dos
+          operaciones clásicas sobre la madre:</p>
+          <dl class="guide-defs">
+            <dt>Inversión</dt><dd>espejo de las alturas: lo que subía, baja.</dd>
+            <dt>Retrógrado</dt><dd>la célula leída al revés.</dd>
+            <dt>Rotación</dt><dd>empieza en otro punto, siempre por tiempos enteros para no romper el pulso.</dd>
+            <dt>Transporte</dt><dd>±1 a 3 grados, solo si las notas caben en el ámbito.</dd>
+            <dt>Subsecuencia</dt><dd>una mitad de la célula, repetida dos veces.</dd>
+          </dl>
+          <p>Además, con probabilidad 0.4, la variación <b>redibuja sus alturas</b>
+          con otro contorno, conservando ritmo, dinámica y articulación: sigue
+          emparentada con la madre pero canta otra línea. Al final una máscara
+          retoca algunos pasos al azar (altura ±2, dinámica, a veces nota↔silencio).
+          Cada motivo tiene su color en el piano roll.</p>
+        </section>
+
+        <section id="g-form">
+          <h3>La forma</h3>
+          <p>La forma es una secuencia de letras, p. ej. <code>A-B-A</code>,
+          <code>A-B-A-C-A</code> (rondó) o <code>A-B-C-D-C-B-A</code> (arco). Cada
+          letra es una <b>sección</b> y <b>misma letra significa mismo material</b>:
+          las A comparten reparto de bloques y motivos, así que una A que vuelve se
+          reconoce. Lo que puede cambiar entre apariciones es la tonalidad (depende
+          de la posición en la pieza) y los detalles de superficie del humanizador.</p>
+          <p>Cada sección repite la célula un número de veces que siempre es
+          <b>potencia de 2</b>. El slider Duración fija una duración objetivo: el
+          plan de duración prueba largos de célula y repeticiones por letra, elige
+          entre los más cercanos y prefiere no pasar de 16 repeticiones por sección
+          (más suena a bucle). Por eso la duración real se desvía hasta ~10 %.</p>
+        </section>
+
+        <section id="g-orch">
+          <h3>Orquestación por bloques</h3>
+          <p>Dentro de una sección, cada pista toca una sucesión de <b>bloques</b>:
+          tramos de varias repeticiones de célula (también potencias de 2) en los
+          que toca un motivo o calla. Las reglas:</p>
+          <ul>
+            <li><b>Dos pistas nunca tocan el mismo motivo a la vez.</b> Si no queda
+            motivo libre, el bloque se parte en mitades; si ni así, la pista calla
+            antes que duplicar.</li>
+            <li>Bloques consecutivos de una pista no repiten motivo.</li>
+            <li>Un bloque calla con probabilidad 0.15 y una pista calla la sección
+            entera con 0.2: así entran y salen voces y la textura cambia.</li>
+            <li><b>Sin silencios generales:</b> en cada repetición de célula al menos
+            una pista suena. Si los silencios coinciden en todas, una pista rellena
+            el hueco.</li>
+          </ul>
+        </section>
+
+        <section id="g-recap">
+          <h3>Recapitulación</h3>
+          <p>En una sección al azar (nunca la primera) una pista vuelve
+          <b>literalmente</b> a la célula madre (o a una variación) durante toda la
+          sección, y las demás callan donde coincidirían con ella. Es el momento de
+          reconocimiento de la pieza; se marca en <span class="guide-amber">ámbar</span>
+          en la barra de secciones y en las vistas, y los pases la respetan.</p>
+        </section>
+
+        <section id="g-tonal">
+          <h3>Plan tonal: viaje por quintas</h3>
+          <p>La pieza sigue un <b>arco compuesto de antemano</b> sobre el ciclo de
+          quintas. Se sortea un sentido (hacia los bemoles, más probable en menor y
+          dórica, o hacia los sostenidos) y una lejanía máxima de 1 a 4 quintas. La
+          tonalidad sale de la tónica, se aleja una quinta por sección hasta el
+          clímax, se sostiene y regresa: <b>siempre termina en la tonalidad base</b>.</p>
+          <p>Las modulaciones solo caen en <b>fronteras de sección</b> y son
+          <b>suaves</b>: no se transpone todo, sino que cada nota se calcula en la
+          tonalidad base y solo se altera ±1 semitono si no pertenece a la nueva
+          armadura. La barra de secciones muestra la tonalidad de cada una; la
+          vista «Órbita de quintas» dibuja el viaje.</p>
+        </section>
+
+        <section id="g-passes">
+          <h3>Pases de acabado</h3>
+          <p>Con la rejilla de notas ya colocada, tres pases la retocan en este
+          orden:</p>
+          <dl class="guide-defs">
+            <dt>Humanizador</dt><dd>las repeticiones se «gastan» (a partir de la
+            segunda, alguna nota cae, se vuelve fantasma o gana un mordente); notas de
+            paso que suavizan saltos amplios; articulación según el gesto (ligado en
+            grados conjuntos, corte tras un salto); arco de dinámica por bloque; y
+            «respiraciones» antes de las fronteras de sección. La primera pasada y la
+            recapitulación suenan limpias.</dd>
+            <dt>Energía</dt><dd>cuenta los ataques por célula frente a un presupuesto
+            que crece hacia un clímax en torno al 65 % de la pieza. Si hay demasiadas
+            pistas atacando, las de fondo ceden sus notas más débiles y alargan la
+            anterior. Nunca toca el primer plano, los tiempos fuertes ni la
+            recapitulación.</dd>
+            <dt>Contrapunto</dt><dd>vigila lo que suena a la vez entre pistas: resuelve
+            segundas, séptimas y tritonos moviendo una nota ±1 grado, apagándola o
+            acortándola, y abre unísonos a la octava. En tiempo fuerte garantiza que
+            no queden disonancias duras; en tiempo débil tolera notas de paso. Es
+            determinista, así que las secciones con la misma letra reciben las mismas
+            correcciones.</dd>
+          </dl>
+          <p>Ningún pase toca el tempo ni mueve notas en el tiempo: no hay rubato ni
+          swing; el pulso es siempre el del slider ♩.</p>
+        </section>
+
+        <section id="g-end">
+          <h3>Duraciones y final</h3>
+          <p>Cada nota dura su <b>sustain × el hueco</b> hasta la siguiente nota de
+          su pista: como mucho legato, nunca se pisa a sí misma. Al acercarse el
+          final, las últimas células hacen diminuendo y la última nota de cada pista
+          se posa en la <b>tríada de tónica</b> — la más tardía en la tónica misma —
+          formando una cadencia. Tras el último paso sigue una coda en la que esas
+          notas se alargan y las pistas se desvanecen, mientras reverb y delay
+          conservan su cola.</p>
+        </section>
+
+        <section id="g-you">
+          <h3>Lo que controlas</h3>
+          <ul>
+            <li><b>Generación:</b> pistas, duración y tempo (fijos o al azar dentro de
+            un rango), contornos permitidos, forma, escala y tonalidad.</li>
+            <li><b>Escala y tonalidad en vivo:</b> como la pieza guarda grados y no
+            notas, cambiarlas re-afina la pieza en curso sin recomponerla — también
+            mientras suena.</li>
+            <li><b>Tempo en vivo:</b> el slider ♩ cambia la velocidad sin alterar la
+            partitura.</li>
+            <li><b>Sonido:</b> cada pista tiene su instrumento, volumen, paneo y
+            envíos; el editor de sintes ajusta timbre y efectos. Nada de esto cambia
+            la composición.</li>
+          </ul>
+        </section>
+      </article>
     </div>
   </div>
   <!-- Modo kiosco sin permiso de autoplay: el audio espera el primer gesto -->

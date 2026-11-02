@@ -1172,6 +1172,290 @@ input[type="checkbox"].rand-toggle:checked::before {
   }
 }
 
+/* ==== Guía de composición: modal centrado con índice lateral y texto
+   desplazable ==== */
+
+.guide-btn {
+  width: 26px;
+  height: 26px;
+  margin-left: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.guide-btn:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.guide-btn.dialog-open {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.guide {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(880px, calc(100vw - 32px));
+  height: min(680px, calc(100vh - 48px));
+  padding: 0;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.guide:popover-open {
+  display: flex;
+  flex-direction: column;
+}
+
+.guide::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.guide-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 172px 1fr;
+}
+
+.guide-toc {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 12px 8px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.guide-toc a {
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.guide-toc a:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.guide-text {
+  overflow-y: auto;
+  padding: 4px 28px 28px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.guide-text section {
+  max-width: 64ch;
+  padding-top: 20px;
+  scroll-margin-top: 0;
+}
+
+.guide-text h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.guide-text h3::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.guide-text p,
+.guide-text ul {
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+
+.guide-text b {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.guide-text ul {
+  padding-left: 18px;
+}
+
+.guide-text li {
+  margin-bottom: 6px;
+}
+
+.guide-text code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-3);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+}
+
+.guide-amber {
+  color: var(--accent);
+}
+
+.guide-defs {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 6px 14px;
+  margin-bottom: 10px;
+}
+
+.guide-defs dt {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.guide-defs dd {
+  color: var(--muted);
+}
+
+/* Flujo de la composición: una cadena de etapas numeradas */
+.guide-flow {
+  counter-reset: flow;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  margin: 14px 0 4px;
+}
+
+.guide-flow li {
+  counter-increment: flow;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.guide-flow li::before {
+  content: counter(flow, decimal-leading-zero);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.guide-flow li span {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.guide-piece {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.guide-empty {
+  margin: 0 !important;
+}
+
+.guide-facts {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 4px 14px;
+  font-size: 12.5px;
+}
+
+.guide-facts dt {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.75;
+}
+
+.guide-facts dd {
+  color: var(--text);
+}
+
+.guide-sections {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.guide-sections th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--faint);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.guide-sections td {
+  padding: 4px 8px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.guide-sections td b {
+  color: var(--text);
+}
+
+.guide-sections tr.recap td,
+.guide-sections tr.recap td b {
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .guide-body {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-toc {
+    display: none;
+  }
+
+  .guide-text {
+    padding: 4px 16px 20px;
+  }
+
+  .guide-defs,
+  .guide-facts {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .guide-defs dd,
+  .guide-facts dd {
+    margin-bottom: 6px;
+  }
+}
+
 /* ==== Editor de sinte y efectos: modal centrado (popover manual: sin
    light-dismiss para poder tocar el resto de la UI mientras se edita;
    cierre con ✕ o Esc) ==== */
