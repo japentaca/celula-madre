@@ -708,18 +708,23 @@ const Generator = (() => {
     // continuidad propia — retoma donde se quedó, grados conjuntos, atraída por
     // un centro que dibuja un arco —, a una tercera como poco del pedal; a veces
     // el pedal cambia una vez a mitad (tónica → dominante) o es doble (tónica y
-    // quinta alternadas). El pedal no lleva ruido: debe ser la misma altura
+    // quinta alternadas). El pedal no lleva ruido: debe ser la misma altura.
+    // Se escribe en grados exactos dentro de [-7, 7] — pedal en la tónica
+    // grave (-7), voz hasta la aguda — para que la normalización no reescale
+    // y el pedal caiga siempre en un grado estable
     bordón(n) {
       const inverted = Math.random() < 0.35;                   // pedal agudo: se calcula grave y se refleja
       const double = Math.random() < 0.12;
+      const TONIC = -7;
+      const FIFTH = -3;
       const shiftAt = !double && Math.random() < 0.3 ? n / 2 : n;
-      const shift = pickRandom([-3, 4]);                        // dominante grave o aguda
+      const shift = pickRandom([FIFTH, FIFTH, -4]);             // dominante o subdominante
       const PATTERNS = [2, 2, 3, 4, 0];                         // 0 = irregular
       let pattern = pickRandom(PATTERNS);
       const phase = Math.random() < 0.5 ? 0 : 1;               // empieza por el pedal o por la voz
       // Centro de la voz: arco con clímax desplazado, o rampa que sube o baja
       const lo = 3 + Math.random() * 2;
-      const hi = 8.5 + Math.random() * 2;
+      const hi = 9.5 + Math.random() * 2;
       const shape = pickRandom(['arc', 'arc', 'up', 'down']);
       const peak = 0.5 + Math.random() * 0.25;
       const target = i => {
@@ -729,8 +734,8 @@ const Generator = (() => {
         return lo + (hi - lo) * s;
       };
       const out = [];
-      let pedal = 0;
-      let voice = target(0) + (double ? 4 : 0);
+      let pedal = TONIC;
+      let voice = target(0) + (double ? FIFTH : TONIC);
       let wasPedal = false;
       let fifth = false;
       for (let i = 0; i < n; i++) {
@@ -740,18 +745,18 @@ const Generator = (() => {
         wasPedal = isPedal;
         if (isPedal) {
           fifth = double && !fifth;
-          out.push(fifth ? 4 : pedal);
+          out.push(fifth ? FIFTH : pedal);
           continue;
         }
         // La voz vive sobre el pedal más alto en juego: a una tercera como poco
-        // y sin alejarse más de una octava y pico, para que el ámbito crudo se
-        // quede cerca del que impone la normalización
-        const top = Math.max(pedal, double ? 4 : 0);
+        // y sin pasar de la tónica aguda, para que el ámbito crudo quede en el
+        // que respeta la normalización
+        const top = Math.max(pedal, double ? FIFTH : TONIC);
         const want = target(i) + top;
         const pull = want - voice;
         let step = pickRandom([-2, -1, -1, -1, 0, 1, 1, 1, 2]);
         if (Math.abs(pull) > 1.5 && Math.random() < 0.6) step = Math.sign(pull) * pickRandom([1, 1, 1, 2]);
-        voice = Math.max(top + 2, Math.min(top + 11, voice + step));
+        voice = Math.max(top + 2, Math.min(6.8, voice + step));
         out.push(voice + (Math.random() - 0.5) * 0.3);
       }
       return inverted ? out.map(v => -v) : out;
@@ -859,7 +864,18 @@ const Generator = (() => {
       let x = 0.2 + Math.random() * 0.6;
       const r0 = rOf(tau(0));
       for (let k = 20 + Math.floor(Math.random() * 31); k > 0; k--) x = r0 * x * (1 - x);
-      const drift = Math.random() < 0.5 ? (Math.random() - 0.5) * 0.5 / n : 0;
+      // Envolvente lenta de registro (rampa, arco o valle): sin ella, en los
+      // tramos sin caos el ostinato es todo el ámbito y la normalización lo
+      // estira a saltos de novena por más que se estreche
+      const envAmp = 0.5 + Math.random() * 0.4;
+      const envShape = pickRandom(['up', 'down', 'arc', 'valley']);
+      const envPeak = 0.4 + Math.random() * 0.3;
+      const env = i => {
+        const t = i / (n - 1);
+        const s = envShape === 'up' ? t : envShape === 'down' ? 1 - t
+          : t < envPeak ? t / envPeak : (1 - t) / (1 - envPeak);
+        return envAmp * (envShape === 'valley' ? 1 - s : s);
+      };
       // Las dos ramas del periodo 2 distan un tercio del ámbito del mapa: tal
       // cual, el ostinato sale a saltos de séptima que lo dejan todo picado.
       // Se estrecha el vaivén alrededor del punto medio de cada pareja hasta
@@ -877,7 +893,7 @@ const Generator = (() => {
         xPrev = x;
         const memory = 0.65 * chaos;
         v = memory * v + (1 - memory) * y;
-        out.push(v + drift * i);
+        out.push(v + env(i));
       }
       return out;
     },
@@ -961,7 +977,7 @@ const Generator = (() => {
         const head = makeHead(3 + Math.floor(Math.random() * 2), low === 'head');
         // Clímax contenido si el registro grave no viene de un hundimiento, para
         // no desequilibrar el ámbito alrededor de la tónica
-        const climax = Math.max(Math.max(...head) + 1, 3 + Math.floor(Math.random() * (low === 'dip' ? 3 : 2)));
+        const climax = Math.min(7, Math.max(Math.max(...head) + 1, 4 + Math.floor(Math.random() * (low === 'dip' ? 3 : 2))));
         const open = low === 'open' ? -3 : weighted([[4, 3], [1, 3], [-3, 1.5], [2, 1], [6, 0.5]]);
         const approach = climax > open ? open + 1 : open - 1;
         let at = head.length === 3 && Math.random() < 0.5 ? 3 : 4;
@@ -979,9 +995,9 @@ const Generator = (() => {
           else head = q.head.map(v => 2 * q.head[0] - v);
         }
         const intensify = Math.random() < 0.5;
-        const climax = Math.max(Math.max(...head), intensify
+        const climax = Math.min(7, Math.max(Math.max(...head), intensify
           ? q.climax + 1 + (low === 'dip' ? Math.floor(Math.random() * 2) : 0)
-          : q.climax - Math.floor(Math.random() * 2));
+          : q.climax - Math.floor(Math.random() * 2)));
         const type = low === 'dip' ? 'below' : low === 'dominant' ? 'dominant-low'
           : weighted([['above', 4], ['below', 3], ['dominant', 1.5], ['dominant-low', 1.5]]);
         let approach;
@@ -1023,14 +1039,19 @@ const Generator = (() => {
         out = out.concat(made[id]);
         rem -= size;
       }
+      out = out.slice(0, n);
       let M = 0.5;
       let m = -0.5;
       for (const v of out) {
         if (v > M) M = v;
         if (v < m) m = v;
       }
-      const f = Math.sqrt(M / -m);
-      return out.slice(0, n).map(v => v >= 0 ? v / f : v * f);
+      // La tónica ya está en 0: si el ámbito es el que respeta la normalización
+      // se deja intacto; si se queda corto, escala uniforme (conserva la forma
+      // de la cadencia) hasta ~9.5 grados sin salirse del registro
+      if (M - m >= 9 && M <= 7.5 && m >= -7.5) return out;
+      const f = Math.min(9.5 / (M - m), 7.4 / M, 7.4 / -m);
+      return out.map(v => v * f);
     },
 
     // Helecho: sistema L sobre intervalos. Un axioma de 2-4 intervalos se
