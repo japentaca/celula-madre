@@ -80,28 +80,32 @@ const Humanizer = (() => {
   }
 
   // La articulación responde al gesto melódico: legato en grados conjuntos,
-  // corte tras un salto, resonancia hacia los silencios largos, y la última
-  // nota de cada bloque (y de la pista) queda sostenida para cerrar la frase
+  // corte tras un salto aislado, resonancia hacia los silencios largos, y la
+  // última nota de cada bloque (y de la pista) queda sostenida para cerrar la
+  // frase. Un salto que llega de otro salto no corta: es textura pendular
+  // (acorde quebrado, pedal, ostinato ancho) y se toca ligada
   function shapeArticulation(ctx, blockMap) {
     for (let t = 0; t < ctx.numTracks; t++) {
       const row = ctx.grid[t];
       let prev = -1;
+      let prevJump = 0;
       for (let s = 0; s < ctx.totalSteps; s++) {
         if (!row[s]) continue;
         if (prev >= 0) {
           const a = row[prev];
+          const jump = Math.abs(row[s].degree - a.degree);
           if (blockMap[t][prev] !== blockMap[t][s]) {
             a.sustain = 1;
           } else {
-            const jump = Math.abs(row[s].degree - a.degree);
             if (jump <= 1) a.sustain = Math.max(a.sustain, 0.9);
-            else if (jump >= 5) a.sustain = Math.min(a.sustain, 0.45);
+            else if (jump >= 5 && prevJump < 3) a.sustain = Math.min(a.sustain, 0.45);
             // ante un silencio largo la nota suele quedarse resonando en vez
             // de cortarse en seco
             if (s - prev >= 4 && jump < 5 && Math.random() < 0.6 * INTENSITY) {
               a.sustain = Math.max(a.sustain, 0.75 + Math.random() * 0.25);
             }
           }
+          prevJump = jump;
         }
         prev = s;
       }

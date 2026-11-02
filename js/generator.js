@@ -860,14 +860,23 @@ const Generator = (() => {
       const r0 = rOf(tau(0));
       for (let k = 20 + Math.floor(Math.random() * 31); k > 0; k--) x = r0 * x * (1 - x);
       const drift = Math.random() < 0.5 ? (Math.random() - 0.5) * 0.5 / n : 0;
+      // Las dos ramas del periodo 2 distan un tercio del ámbito del mapa: tal
+      // cual, el ostinato sale a saltos de séptima que lo dejan todo picado.
+      // Se estrecha el vaivén alrededor del punto medio de cada pareja hasta
+      // un tercer/cuarta, y el apretón se suelta al entrar en el caos
+      const squeeze = 0.4 + Math.random() * 0.2;
       const out = [];
       let v = x;
+      let xPrev = x;
       for (let i = 0; i < n; i++) {
         const r = rOf(tau(i));
         x = r * x * (1 - x);
         const chaos = Math.max(0, Math.min(1, (r - 3.57) / 0.3));
+        const mid = (x + xPrev) / 2;
+        const y = mid + (squeeze + (1 - squeeze) * chaos) * (x - mid);
+        xPrev = x;
         const memory = 0.65 * chaos;
-        v = memory * v + (1 - memory) * x;
+        v = memory * v + (1 - memory) * y;
         out.push(v + drift * i);
       }
       return out;
