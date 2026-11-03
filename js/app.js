@@ -121,21 +121,67 @@ const App = (() => {
     el.dispatchEvent(new Event(eventType, { bubbles: true }));
   }
 
-  // Primera visita (nada guardado): todo lo que admite azar arranca en azar.
-  // Forma, preset y contornos ya lo hacen por defecto en el HTML
-  function applyRandomDefaults() {
-    for (const name of RANDOM_RANGES) setControl(`checkbox-${name}-random`, true, 'change');
-    setControl('select-form', 'random', 'change');
-    setControl('select-preset', 'random', 'change');
-    setControl('select-scale', 'random', 'change');
-    setControl('select-key', 'random', 'change');
-  }
+  // Primera visita (nada guardado): se restauran estos ajustes, copiados del
+  // binario.settings del autor en la página publicada. Mismo formato que
+  // collectSettings
+  const FIRST_VISIT_SETTINGS = {
+    v: 1,
+    ui: {
+      tempo: 96, numTracks: 6, duration: 8, preset: 'random', scale: 'random', contours: [],
+      key: 'random', formChoice: 'random', autogen: true, autorestart: true, kiosk: false,
+      view: 'mobius',
+      tracksRandom: true, tracksRange: [4, 7],
+      durationRandom: true, durationRange: [2, 4],
+      tempoRandom: true, tempoRange: [55, 101]
+    },
+    audioEnabled: true,
+    midiOutput: '',
+    midiClock: true,
+    fx: { delaydiv: '8', feedback: '0.67', master: '0.88', revdecay: '8.3' },
+    trackSettings: [
+      { preset: 'random', volume: 0.46, reverb: 0.2, delay: 0.39, pan: -0.85, panTouched: false, midiChannel: 1,
+        edited: { base: 'Synth',
+          params: { oscillator: { type: 'triangle' }, detune: 0, portamento: 0.0515,
+            envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 }, volume: -3 },
+          chain: [{ type: 'Vibrato', params: { frequency: 5, depth: 0.15, wet: 1 } }] } },
+      { preset: 'random', volume: 0.46, reverb: 0.2, delay: 0.36, pan: -0.65, panTouched: true, midiChannel: 2,
+        edited: { base: 'Synth',
+          params: { oscillator: { type: 'sine' }, detune: 0, portamento: 0,
+            envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 }, volume: -3 },
+          chain: [{ type: 'Chorus', params: { frequency: 0.6082373350348491, delayTime: 6.035, depth: 0.603, wet: 0.838 } }] } },
+      { preset: 'random', volume: 0.39, reverb: 0.2, delay: 0.33, pan: -0.2833333333333333, panTouched: false, midiChannel: 3,
+        edited: { base: 'AMSynth',
+          params: { oscillator: { type: 'triangle' }, harmonicity: 2, modulation: { type: 'sine' }, portamento: 0,
+            envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 }, volume: 13 },
+          chain: [{ type: 'Chorus', params: { frequency: 0.4265036829003016, delayTime: 6.452999999999999, depth: 0.61, wet: 0.5 } }] } },
+      { preset: 'random', volume: 0.51, reverb: 0.2, delay: 0.3, pan: 0, panTouched: false, midiChannel: 4,
+        edited: { base: 'Synth',
+          params: { oscillator: { type: 'sawtooth' }, detune: 0, portamento: 0,
+            envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 }, volume: -7.661999999999999 },
+          chain: [
+            { type: 'Chorus', params: { frequency: 0.43978905368451704, delayTime: 5.617, depth: 0.746, wet: 0.265 } },
+            { type: 'Vibrato', params: { frequency: 1.301408347591638, depth: 0.196, wet: 0.506 } },
+            { type: 'Filter', params: { type: 'lowpass', frequency: 1225.5942475114457, Q: 0.7307509177405034 } }
+          ] } },
+      { preset: 'random', volume: 0.53, reverb: 0.2, delay: 0.26, pan: 0.2833333333333333, panTouched: false, midiChannel: 5,
+        edited: { base: 'MonoSynth',
+          params: { oscillator: { type: 'triangle' }, detune: 0, portamento: 0,
+            envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 },
+            filter: { type: 'lowpass', Q: 1 },
+            filterEnvelope: { baseFrequency: 200, octaves: 3, attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 },
+            volume: 0 },
+          chain: [{ type: 'AutoFilter', params: { frequency: 0.1893918717037648, baseFrequency: 200, octaves: 5.472, depth: 0.846, wet: 1 } }] } },
+      { preset: 'random', volume: 0.53, reverb: 0.2, delay: 0.28, pan: 0.5666666666666668, panTouched: false, midiChannel: 6,
+        edited: { base: 'Synth',
+          params: { oscillator: { type: 'triangle' }, detune: 0, portamento: 0.045,
+            envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 }, volume: -3 },
+          chain: [{ type: 'Vibrato', params: { frequency: 1.2135255953180166, depth: 0.257, wet: 1 } }] } },
+      { preset: 'random', volume: 0.54, reverb: 0.2, delay: 0, pan: 0.85, panTouched: false, midiChannel: 7, edited: null }
+    ],
+    resolvedPresets: ['Synth', 'Synth', 'FMSynth', 'MonoSynth', 'Synth', 'SynthPair', 'FMSynth']
+  };
 
   function restoreSettings(saved) {
-    if (!saved) {
-      applyRandomDefaults();
-      return;
-    }
     const ui = saved.ui || {};
     setControl('slider-tempo', ui.tempo, 'input');
     setControl('slider-tracks', ui.numTracks, 'input');
@@ -1142,7 +1188,7 @@ const App = (() => {
   }
 
   function init() {
-    const saved = loadSettings();
+    const saved = loadSettings() || FIRST_VISIT_SETTINGS;
     setupUI(saved);
     setupKeyboard();
     setupPieceBar();
