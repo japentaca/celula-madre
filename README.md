@@ -45,6 +45,11 @@ durante la reproducción.
   cámara con seguimiento: ciudad de notas, túnel helicoidal (una vuelta =
   una célula), terreno orgánico y constelación de partículas.
 - Salida Web MIDI con timestamps precisos y apagado limpio de notas al parar.
+- Reloj MIDI por la salida MIDI (casilla «Reloj MIDI» en el diálogo Salida,
+  activa por defecto): 24 pulsos por negra al tempo de la pieza, con start /
+  stop al reproducir y parar, para que el VST siga el tempo (delays y LFOs
+  sincronizados; p. ej. con vst-player vía loopMIDI). Entre piezas
+  encadenadas el reloj sigue en reposo, así el receptor conserva el tempo.
 
 ## Ejecutar
 

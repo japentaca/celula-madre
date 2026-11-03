@@ -366,6 +366,9 @@ const Composer = (() => {
     // Los niveles se reponen al reanudar y no al parar: al acabar la coda
     // aún pueden quedar releases largos que volverían de golpe
     AudioEngine.restoreTrackLevels();
+    // Reloj MIDI antes que las notas: a igual tiempo, Tone dispara los eventos
+    // en orden de alta y el start (o continue) debe preceder a la primera nota
+    MidiEngine.startClock(currentStep);
     let fading = false;
     repeatEventId = Tone.Transport.scheduleRepeat(time => {
       const step = currentStep;
@@ -427,6 +430,7 @@ const Composer = (() => {
     Tone.Transport.cancel();
     Tone.Transport.position = 0;
     MidiEngine.allNotesOff();
+    MidiEngine.stopClock();
   }
 
   // Salto a un paso (p. ej. el inicio de una sección): en marcha, el próximo

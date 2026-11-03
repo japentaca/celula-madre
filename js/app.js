@@ -83,6 +83,7 @@ const App = (() => {
       ui: getUIState(),
       audioEnabled: document.getElementById('checkbox-audio').checked,
       midiOutput: document.getElementById('select-midi-out').value,
+      midiClock: document.getElementById('checkbox-midi-clock').checked,
       fx: {
         delaydiv: document.getElementById('slider-delaydiv').value,
         feedback: document.getElementById('slider-feedback').value,
@@ -157,6 +158,8 @@ const App = (() => {
     setControl('checkbox-autorestart', ui.autorestart, 'change');
     setControl('checkbox-kiosk', ui.kiosk, 'change');
     setControl('checkbox-audio', saved.audioEnabled, 'change');
+    // Ajustes guardados antes del reloj MIDI no lo traen: queda el valor por defecto (activo)
+    if (typeof saved.midiClock === 'boolean') setControl('checkbox-midi-clock', saved.midiClock, 'change');
     // compat: sesiones guardadas antes del selector de vista usaban viz3d bool
     const savedView = ui.view || (ui.viz3d ? 'city' : '2d');
     if (savedView !== '2d') setView(savedView);
@@ -198,6 +201,8 @@ const App = (() => {
     const select = document.getElementById('select-midi-out');
     const audioCheckbox = document.getElementById('checkbox-audio');
     audioCheckbox.addEventListener('change', () => AudioEngine.setEnabled(audioCheckbox.checked));
+    const clockCheckbox = document.getElementById('checkbox-midi-clock');
+    clockCheckbox.addEventListener('change', () => MidiEngine.setClockEnabled(clockCheckbox.checked));
     // Elegir un puerto MIDI apaga el audio web (el VST toma el relevo) y
     // quitarlo lo vuelve a encender; el usuario puede re-marcarlo para doblar
     const setAudio = on => {
@@ -208,6 +213,7 @@ const App = (() => {
 
     if (!MidiEngine.isSupported()) {
       select.disabled = true;
+      clockCheckbox.disabled = true;
       select.options[0].textContent = '(no soportado)';
       return;
     }
@@ -726,6 +732,7 @@ const App = (() => {
   function cancelNextPiece() {
     clearTimeout(state.nextPieceTimer);
     state.nextPieceTimer = null;
+    MidiEngine.stopIdleClock();
   }
 
   async function play() {
@@ -753,6 +760,9 @@ const App = (() => {
         // cola (AudioEngine.setupTracks) durante el respiro previo a la nueva
         if (regenerate) generate();
         cancelNextPiece();
+        // El reloj MIDI sigue en reposo durante el respiro (sin start): así el
+        // receptor conserva el tempo en las colas en vez de darlo por perdido
+        MidiEngine.keepClockAlive();
         state.nextPieceTimer = setTimeout(() => {
           state.nextPieceTimer = null;
           play();
