@@ -41,6 +41,10 @@ const MidiEngine = (() => {
         if (output && output.state === 'disconnected') output = null;
         if (onDevicesChanged) onDevicesChanged(getOutputs());
       };
+      // Al recargar o cerrar con un puerto en uso Chrome se ha llegado a
+      // colgar (loopMIDI con el otro extremo abierto): se descarta lo encolado
+      // a futuro, se manda stop y note-offs sin timestamp y se cierra el puerto
+      window.addEventListener('pagehide', release);
     } catch (e) {
       console.warn('Web MIDI no disponible o permiso denegado', e);
     }
@@ -153,6 +157,16 @@ const MidiEngine = (() => {
       }
     } catch (e) { /* ignore */ }
     activeNotes.clear();
+  }
+
+  function release() {
+    stopIdleClock();
+    if (!output) return;
+    allNotesOff();
+    sendClockStop();
+    try {
+      if (output.close) output.close();
+    } catch (e) { /* ignore */ }
   }
 
   function setOnDevicesChanged(cb) {
