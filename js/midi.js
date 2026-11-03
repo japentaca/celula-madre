@@ -26,6 +26,10 @@ const MidiEngine = (() => {
   let lastTickAt = 0;          // timestamp (performance.now) del último 0xF8
   let idleId = null;           // intervalo del reloj en reposo (Tone.context)
   let nextIdleTickAt = 0;
+  // Timestamp del último start/continue: las notas del mismo instante salen
+  // 1 ms después; con el mismo timestamp el receptor puede ver la nota antes
+  // que el start (medido con loopMIDI y --midi-monitor del vst-player)
+  let clockStartAt = -Infinity;
 
   function isSupported() {
     return typeof navigator !== 'undefined' && !!navigator.requestMIDIAccess;
@@ -80,51 +84,76 @@ const MidiEngine = (() => {
   }
 
   // `time` llega en segundos del AudioContext (dominio de Tone); Web MIDI
-  // programa en milisegundos de performance.now(). La correspondencia sale de
+  // programa en milisegundos de performance.now(). Restar currentTime a
+  // performance.now() baila ~3 ms (currentTime avanza a saltos de buffer) y el
+  // reloj MIDI medido bailaba ±1,5 BPM. La correspondencia sale de
   // getOutputTimestamp() del AudioContext nativo (Tone lo envuelve en
   // standardized-audio-context, que no lo expone): un par coherente de tiempos
-  // con ~0,5 ms de dispersión, que además alinea el MIDI con lo que suena por
-  // la salida de audio (incluye su latencia). Restar currentTime a
-  // performance.now() bailaba ~3 ms (currentTime avanza a saltos de buffer) y
-  // el reloj MIDI medido, ±1,5 BPM. Un promedio corto ponderado por tiempo
-  // quita el resto; un salto grande (contexto suspendido) lo reinicia
-  const OFFSET_TAU_MS = 1000;
+  // con ~0,5 ms de dispersión, suavizado con un promedio ponderado por tiempo
+  // (τ 4 s: un corrimiento del reloj de audio, p. ej. ~10 ms tras un corte, se
+  // reparte en varios segundos en vez de torcer el tempo); un salto grande
+  // (contexto suspendido) lo reinicia.
+  // getOutputTimestamp mide lo que sale por los parlantes: se le resta la
+  // latencia de salida (fija desde cada reinicio) para que el MIDI salga
+  // cuando Tone programa el audio, como con la fórmula vieja, sin el atraso
+  // de ~55 ms (el audio web se silencia con salida MIDI: no hay que alinearlo)
+  const OFFSET_TAU_MS = 4000;
   const OFFSET_RESET_MS = 50;
   let perfOffset = null;
   let offsetSamples = 0;
   let lastOffsetAt = 0;
+  let outputLatencyMs = 0;
+  // Último tiempo convertido: los eventos de un mismo instante de audio (el
+  // tick con el start y las notas del primer paso) reciben el mismo timestamp,
+  // así el suavizado entre llamada y llamada no puede adelantar una nota al start
+  let lastTime = null;
+  let lastStamp = 0;
+
+  function nativeContext() {
+    const raw = Tone.context.rawContext;
+    return raw && (raw._nativeAudioContext || raw._nativeContext);
+  }
 
   function offsetSample(now) {
-    const raw = Tone.context.rawContext;
-    const native = raw && (raw._nativeAudioContext || raw._nativeContext);
+    const native = nativeContext();
     if (native && native.getOutputTimestamp) {
       const ts = native.getOutputTimestamp();
       if (ts.contextTime > 0 && ts.performanceTime > 0) return ts.performanceTime - ts.contextTime * 1000;
     }
-    return now - Tone.context.currentTime * 1000;
+    return null;
   }
 
   function toMidiTimestamp(time) {
     const now = performance.now();
+    if (lastTime !== null && Math.abs(time - lastTime) < 1e-6) return Math.max(now, lastStamp);
     const sample = offsetSample(now);
+    if (sample === null) {
+      perfOffset = null;
+      return Math.max(now, now + (time - Tone.context.currentTime) * 1000);
+    }
     if (perfOffset === null || Math.abs(sample - perfOffset) > OFFSET_RESET_MS) {
       perfOffset = sample;
       offsetSamples = 1;
+      const native = nativeContext();
+      outputLatencyMs = ((native.outputLatency || 0) + (native.baseLatency || 0)) * 1000;
     } else {
       offsetSamples++;
       const alpha = Math.max(1 - Math.exp(-(now - lastOffsetAt) / OFFSET_TAU_MS), 1 / offsetSamples);
       perfOffset += (sample - perfOffset) * alpha;
     }
     lastOffsetAt = now;
-    return Math.max(now, perfOffset + time * 1000);
+    lastTime = time;
+    lastStamp = Math.max(now, perfOffset - outputLatencyMs + time * 1000);
+    return lastStamp;
   }
 
   function playNote(trackIndex, midi, time, durationSeconds, velocity) {
     if (!output || midi < 0 || midi > 127) return;
     const channel = ((trackChannels[trackIndex] || 1) - 1) & 0x0f;
     const vel = Math.max(1, Math.min(127, Math.round(velocity * 127)));
-    const at = toMidiTimestamp(time);
-    const end = at + durationSeconds * 1000;
+    const stamp = toMidiTimestamp(time);
+    const at = Math.max(stamp, clockStartAt + 1);
+    const end = stamp + durationSeconds * 1000;
     try {
       output.send([0x90 | channel, midi, vel], at);
       output.send([0x80 | channel, midi, 0], end);
@@ -206,10 +235,12 @@ const MidiEngine = (() => {
       // entregan el continue (tiempo real) primero
       send([SONG_POSITION, position & 0x7F, (position >> 7) & 0x7F], Math.max(performance.now(), at - 1));
       send([CONTINUE], at);
+      clockStartAt = at;
       clockSent = true;
       clockPending = null;
     } else if (clockPending === 'start') {
       send([START], at);
+      clockStartAt = at;
       clockSent = true;
       clockPending = null;
     }
@@ -235,8 +266,15 @@ const MidiEngine = (() => {
 
   // Lo llama Composer.play tras cancelar el Transport y antes de arrancarlo:
   // el primer tick (y el start) caen en el mismo instante que la primera nota.
-  // Reanudar desde un paso > 0 manda song position + continue
+  // Reanudar desde un paso > 0 manda song position + continue.
+  // Si venía sonando el reloj en reposo devuelve el tiempo de audio en que
+  // conviene arrancar el Transport (Composer se lo pasa a Transport.start): el
+  // primer tick de la pieza cae en la rejilla del reposo, que se completa hasta
+  // ahí. Sin esto el hueco entre el último tick en reposo y el primero de la
+  // pieza (hasta ~2 ticks) hacía medir al receptor ~5 % menos de tempo en el
+  // primer segundo. Retrasa el arranque menos de un tick
   function startClock(step) {
+    const alignedStart = alignToIdleClock();
     stopIdleClock();
     clockRunning = true;
     clockStartStep = Math.max(0, Math.floor(step || 0));
@@ -244,6 +282,21 @@ const MidiEngine = (() => {
     if (clockEventId !== null) Tone.Transport.clear(clockEventId);
     clockEventId = null;
     updateClock();
+    return alignedStart;
+  }
+
+  function alignToIdleClock() {
+    if (idleId === null || !output || !clockEnabled) return undefined;
+    const earliest = Tone.now();
+    const at = toMidiTimestamp(earliest);
+    const period = tickMs();
+    const target = nextIdleTickAt + Math.max(0, Math.ceil((at - nextIdleTickAt) / period)) * period;
+    if (target - at > period + 1) return undefined; // rejilla vieja: arranque normal
+    while (nextIdleTickAt < target - period / 2) {
+      if (send([CLOCK], nextIdleTickAt)) lastTickAt = nextIdleTickAt;
+      nextIdleTickAt += period;
+    }
+    return earliest + (target - at) / 1000;
   }
 
   // Lo llama Composer.stop después de allNotesOff (que puede vaciar la cola

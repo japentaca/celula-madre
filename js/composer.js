@@ -368,7 +368,8 @@ const Composer = (() => {
     AudioEngine.restoreTrackLevels();
     // Reloj MIDI antes que las notas: a igual tiempo, Tone dispara los eventos
     // en orden de alta y el start (o continue) debe preceder a la primera nota
-    MidiEngine.startClock(currentStep);
+    // Con el reloj MIDI en reposo devuelve un instante alineado a su rejilla
+    const startAt = MidiEngine.startClock(currentStep);
     let fading = false;
     repeatEventId = Tone.Transport.scheduleRepeat(time => {
       const step = currentStep;
@@ -411,7 +412,7 @@ const Composer = (() => {
       }, time);
     }, STEP);
 
-    Tone.Transport.start();
+    Tone.Transport.start(startAt);
   }
 
   // Parada con memoria: en marcha pausa (conserva currentStep para que play
