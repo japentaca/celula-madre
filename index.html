@@ -45,7 +45,7 @@
       <button popovertarget="dlg-generation" class="dialog-btn">Generación</button>
       <button popovertarget="dlg-effects" class="dialog-btn">Efectos</button>
       <button popovertarget="dlg-output" class="dialog-btn">Salida</button>
-      <button popovertarget="dlg-guide" class="guide-btn" title="Cómo se compone una pieza: célula, variaciones, forma, orquestación, plan tonal y pases" aria-label="Cómo funciona">?</button>
+      <button popovertarget="dlg-guide" class="guide-btn" title="Cómo se compone una pieza: célula, variaciones, forma, orquestación, plan tonal, armonía y pases" aria-label="Cómo funciona">?</button>
     </nav>
 
     <div class="view-pick">
@@ -139,6 +139,16 @@
           <option value="A-B-C-A-B">A-B-C-A-B</option>
           <option value="A-A-B-B-C-C-A">A-A-B-B-C-C-A</option>
           <option value="A-B-C-D-C-B-A">A-B-C-D-C-B-A</option>
+        </select>
+        <span class="dialog-val"></span>
+      </div>
+      <div class="dialog-row">
+        <label title="Cómo cambia de tonalidad la pieza entre secciones (se aplica al generar). Real: la escala se transporta de verdad a la tónica de cada sección, con destinos vecinos (dominante, subdominante, relativo, homónimo) preparados por un acorde pivote y la dominante de la nueva tonalidad. Suave: cada nota se calcula en la tonalidad base y solo se alteran ±1 semitono las ajenas a la nueva armadura. Ninguna: toda la pieza en la tonalidad base. Aleatoria: se sortea en cada pieza">Modulación</label>
+        <select id="select-modulation">
+          <option value="real" selected>Real</option>
+          <option value="soft">Suave</option>
+          <option value="none">Ninguna</option>
+          <option value="random">Aleatoria</option>
         </select>
         <span class="dialog-val"></span>
       </div>
@@ -273,9 +283,11 @@
         <a href="#g-contour">Contornos</a>
         <a href="#g-var">Variaciones</a>
         <a href="#g-form">Forma</a>
+        <a href="#g-plan">Plan formal</a>
         <a href="#g-orch">Orquestación</a>
         <a href="#g-recap">Recapitulación</a>
         <a href="#g-tonal">Plan tonal</a>
+        <a href="#g-harmony">Armonía</a>
         <a href="#g-passes">Pases</a>
         <a href="#g-end">Duraciones y final</a>
         <a href="#g-you">Lo que controlas</a>
@@ -293,12 +305,15 @@
           <ol class="guide-flow">
             <li><b>Forma</b><span>letras de sección</span></li>
             <li><b>Plan de duración</b><span>largo de célula y repeticiones</span></li>
+            <li><b>Plan formal</b><span>carácter, frases, clímax</span></li>
             <li><b>Célula madre</b><span>ritmo, alturas, dinámica</span></li>
             <li><b>Motivos</b><span>madre + variaciones</span></li>
             <li><b>Orquestación</b><span>bloques por pista y sección</span></li>
-            <li><b>Plan tonal</b><span>viaje por quintas</span></li>
+            <li><b>Plan tonal</b><span>viaje por tonalidades vecinas</span></li>
+            <li><b>Plan armónico</b><span>progresión y cadencias</span></li>
             <li><b>Humanizador</b><span>superficie viva</span></li>
             <li><b>Energía</b><span>densidad entre pistas</span></li>
+            <li><b>Armonía</b><span>notas al acorde</span></li>
             <li><b>Contrapunto</b><span>consonancia vertical</span></li>
             <li><b>Duraciones</b><span>legato y final</span></li>
           </ol>
@@ -391,13 +406,54 @@
           <code>A-B-A-C-A</code> (rondó) o <code>A-B-C-D-C-B-A</code> (arco). Cada
           letra es una <b>sección</b> y <b>misma letra significa mismo material</b>:
           las A comparten reparto de bloques y motivos, así que una A que vuelve se
-          reconoce. Lo que puede cambiar entre apariciones es la tonalidad (depende
-          de la posición en la pieza) y los detalles de superficie del humanizador.</p>
+          reconoce. Lo que puede cambiar entre apariciones es la tonalidad y el
+          registro exacto (dependen de la posición en la pieza) y los detalles de
+          superficie del humanizador.</p>
           <p>Cada sección repite la célula un número de veces que siempre es
           <b>potencia de 2</b>. El slider Duración fija una duración objetivo: el
           plan de duración prueba largos de célula y repeticiones por letra, elige
           entre los más cercanos y prefiere no pasar de 16 repeticiones por sección
           (más suena a bucle). Por eso la duración real se desvía hasta ~10 %.</p>
+        </section>
+
+        <section id="g-plan">
+          <h3>Plan formal: carácter, frases y clímax</h3>
+          <p>Antes de colocar una sola nota se traza el <b>plan formal</b> de la
+          pieza. La primera letra es la <b>exposición</b>: presenta la célula
+          madre, que domina su reparto, en registro medio, con textura media y
+          sin tocar todas las pistas. Cada una de las demás letras toma un
+          <b>carácter</b> que contrasta con ella en varias cosas a la vez:</p>
+          <dl class="guide-defs">
+            <dt>Lírico</dt><dd>una octava arriba, pocas pistas, piano y frases largas.</dd>
+            <dt>Sombrío</dt><dd>una octava abajo, pocas pistas y piano.</dd>
+            <dt>Agitado</dt><dd>todas las pistas, casi sin silencios, forte; a veces una octava abajo.</dd>
+            <dt>Brillante</dt><dd>una octava arriba, todas las pistas y forte.</dd>
+          </dl>
+          <p>Fuera de la exposición la madre pasa a segundo plano y cada letra
+          prefiere un par de variaciones propias; también cambia qué pistas tocan
+          (primero las que callaban en la exposición). Toda la pieza va hacia un
+          único sentido de registro, para que dos secciones nunca disten dos
+          octavas.</p>
+          <p>El <b>clímax</b> se coloca hacia el 60–70 % de la pieza, en una
+          sección distinta de la exposición, y su letra recibe un carácter intenso
+          (agitado o brillante). De ese punto sale un único <b>perfil de
+          intensidad</b> que crece hasta el clímax y cede hasta el final: lo usan a
+          la vez la Energía (cuántos ataques caben), la dinámica del humanizador y
+          el plan tonal, cuya tonalidad más lejana cae justo en la sección del
+          clímax. Así densidad, volumen y lejanía culminan juntos.</p>
+          <p>Cada sección se divide en <b>frases</b> de 4 compases (8 en el
+          carácter lírico, más largas en secciones muy largas), siempre potencias
+          de 2 alineadas con las repeticiones de célula. Las frases se agrupan en
+          pregunta y respuesta: el <b>antecedente</b> cierra en semicadencia y el
+          <b>consecuente</b> en cadencia perfecta o, a veces, rota (V–vi). La
+          última frase lleva la cadencia de la sección, y antes de cada final de
+          frase las voces respiran.</p>
+          <p>Cuando la forma vuelve a A tras otra letra (A–B–A, rondó…), la
+          sección anterior termina con una <b>retransición</b>: su última frase
+          (o su segunda mitad) se queda sobre la <b>dominante</b> de la tonalidad
+          a la que se vuelve, con el bajo como pedal, en crescendo hacia la vuelta
+          si el clímax llega ahí o en diminuendo si ya pasó. La vuelta de A es la
+          recapitulación y suena en la tónica y en su registro de exposición.</p>
         </section>
 
         <section id="g-orch">
@@ -410,8 +466,10 @@
             motivo libre, el bloque se parte en mitades; si ni así, la pista calla
             antes que duplicar.</li>
             <li>Bloques consecutivos de una pista no repiten motivo.</li>
-            <li>Un bloque calla con probabilidad 0.15 y una pista calla la sección
-            entera con 0.2: así entran y salen voces y la textura cambia.</li>
+            <li>Qué pistas tocan cada letra lo decide su carácter (plan formal), y
+            cada bloque calla con una probabilidad que también depende de él (0.05
+            en textura densa, 0.15 en media, 0.3 en rala): así entran y salen voces
+            y cada letra tiene su textura.</li>
             <li><b>Sin silencios generales:</b> en cada repetición de célula al menos
             una pista suena. Si los silencios coinciden en todas, una pista rellena
             el hueco.</li>
@@ -420,50 +478,131 @@
 
         <section id="g-recap">
           <h3>Recapitulación</h3>
-          <p>En una sección al azar (nunca la primera) una pista vuelve
-          <b>literalmente</b> a la célula madre (o a una variación) durante toda la
-          sección, y las demás callan donde coincidirían con ella. Es el momento de
-          reconocimiento de la pieza; se marca en <span class="guide-amber">ámbar</span>
+          <p>En la <b>vuelta de A</b> (o, si la forma no vuelve a A, en la última
+          sección) una pista vuelve <b>literalmente</b> a la célula madre (o, menos
+          a menudo, a una variación) durante toda la sección, y las demás callan
+          donde coincidirían con ella. Es el momento de reconocimiento de la pieza,
+          preparado por la retransición; se marca en <span class="guide-amber">ámbar</span>
           en la barra de secciones y en las vistas, y los pases la respetan.</p>
         </section>
 
         <section id="g-tonal">
-          <h3>Plan tonal: viaje por quintas</h3>
-          <p>La pieza sigue un <b>arco compuesto de antemano</b> sobre el ciclo de
-          quintas. Se sortea un sentido (hacia los bemoles, más probable en menor y
-          dórica, o hacia los sostenidos) y una lejanía máxima de 1 a 4 quintas. La
-          tonalidad sale de la tónica, se aleja una quinta por sección hasta el
-          clímax, se sostiene y regresa: <b>siempre termina en la tonalidad base</b>.</p>
-          <p>Las modulaciones solo caen en <b>fronteras de sección</b> y son
-          <b>suaves</b>: no se transpone todo, sino que cada nota se calcula en la
-          tonalidad base y solo se altera ±1 semitono si no pertenece a la nueva
-          armadura. La barra de secciones muestra la tonalidad de cada una; la
-          vista «Órbita de quintas» dibuja el viaje.</p>
+          <h3>Plan tonal: viaje por tonalidades vecinas</h3>
+          <p>La pieza sigue un <b>arco compuesto de antemano</b>, coordinado con el
+          plan formal: la tonalidad más lejana cae en la sección del clímax y la
+          recapitulación ya está en casa. Se sortea una lejanía máxima (de 1 a 4
+          pasos, según cuántas secciones haya antes y después del clímax) y una
+          <b>ruta</b> de tonalidades vecinas, cada una a un paso de la anterior: la
+          <b>dominante</b> o la <b>subdominante</b> (una quinta arriba o abajo), el
+          <b>relativo</b> (cambio de modo con la misma armadura: Do mayor ↔ La menor;
+          en dórica, Re ↔ Do mayor; en mixolidia, Sol ↔ La menor) o, solo desde la
+          tónica, el <b>homónimo</b> (Do mayor ↔ Do menor: mixtura modal). La tonalidad
+          se aleja hacia el clímax y vuelve por el mismo camino: <b>siempre termina
+          en la tonalidad base</b>. Al acercarse al clímax la ruta prefiere el lado
+          de la dominante (más tensión); en menor el primer destino más probable es
+          el relativo mayor; la pentatónica y la cromática solo viajan por quintas.</p>
+          <p>Las modulaciones solo caen en <b>fronteras de sección</b>. El selector
+          <b>Modulación</b> del diálogo Generación decide cómo suenan:</p>
+          <dl class="guide-defs">
+            <dt>Real</dt><dd>(por defecto) la escala se transporta de verdad: en una
+            sección en Sol, el grado 0 es Sol y la célula suena en Sol, no en Do con un
+            Fa#. La octava de cada sección se elige mirando la anterior y el
+            carácter de su letra, para que la altura media no salte de golpe al
+            modular.</dd>
+            <dt>Suave</dt><dd>cada nota se calcula en la tonalidad base y solo se
+            altera ±1 semitono si no pertenece a la nueva armadura: las alturas casi no
+            se mueven, pero el centro tonal sigue siendo el de la base. Solo viaja por
+            quintas, en un sentido.</dd>
+            <dt>Ninguna</dt><dd>toda la pieza en la tonalidad base.</dd>
+            <dt>Aleatoria</dt><dd>se sortea en cada pieza (la real con más
+            probabilidad); la opción muestra entre paréntesis la que suena.</dd>
+          </dl>
+          <p>La barra de secciones muestra la tonalidad real de cada una (con «m» si
+          está en menor dentro de una pieza mayor, por ejemplo); la vista «Órbita de
+          quintas» dibuja el viaje con un faro por tónica.</p>
+        </section>
+
+        <section id="g-harmony">
+          <h3>Plan armónico: progresión y cadencias</h3>
+          <p>Cada sección lleva debajo una <b>progresión de acordes</b> en bucle
+          — tríadas por terceras sobre los grados del modo, como I–vi–IV–V en mayor,
+          i–♭VI–♭III–♭VII en menor, i–IV en dórica o I–♭VII–IV–I en mixolidia —
+          con un <b>ritmo armónico</b> de un acorde cada cuarto o media célula
+          (8 a 32 semicorcheas) que vuelve a empezar en cada frase. <b>Misma letra,
+          misma progresión</b>; entre las
+          del modo se prefieren las que ya encajan con la melodía, así que la
+          armonía acompaña a la célula en lugar de imponerse.</p>
+          <p>Los acordes se cuentan desde la <b>tónica local</b>: en una sección
+          modulada, I es la tonalidad de esa sección y la progresión se lee en su
+          modo (la misma letra en el relativo menor suena i–♭VI–iv–v donde antes era
+          I–vi–IV–V). Cada frase interna cierra en semicadencia (antecedente) o en
+          cadencia perfecta o rota (consecuente), y toda sección termina en
+          <b>cadencia</b>:</p>
+          <dl class="guide-defs">
+            <dt>Semicadencia</dt><dd>si sigue la misma tonalidad: cierra sobre V, que
+            queda abierta y empuja a seguir.</dd>
+            <dt>Preparación</dt><dd>si la siguiente sección modula: un <b>acorde
+            pivote</b>, común a las dos tonalidades y predominante de la nueva (vi de
+            Do = ii de Sol), y la <b>dominante de la nueva tonalidad</b> (V/x): V/V con
+            Fa# hacia Sol, V7/IV con Sib hacia Fa, V/vi con Sol# hacia La menor. Así la
+            modulación se oye venir. Hacia el homónimo no hay pivote posible y va la
+            predominante propia.</dd>
+            <dt>Retransición</dt><dd>antes de la vuelta de A, la dominante (V o V/x)
+            se prolonga durante toda la última frase, precedida de su pivote o
+            predominante.</dd>
+            <dt>Cadencia perfecta</dt><dd>la última sección: V–I en la tonalidad base,
+            con la que cierra la pieza.</dd>
+          </dl>
+          <p>En <b>menor y dórica</b> el V de cadencia lleva <b>sensible</b>: la
+          tercera sube un semitono (Sol# en La menor) para que resuelva en la tónica;
+          la mixolidia conserva su cadencia modal v–I. Esas alteraciones afectan a
+          toda nota de ese grado mientras dura el acorde, para que no convivan Sol y
+          Sol#, y se guardan aparte del grado, así que también sobreviven al
+          re-afinar.</p>
+          <ul>
+            <li><b>Pentatónica:</b> solo hay tríadas sin segundas sobre I y vi; V y
+            ii suenan como quintas vacías.</li>
+            <li><b>Cromática:</b> sin centro tonal ni tríadas por grados, no lleva plan.</li>
+            <li>Se evitan las tríadas disminuidas de cada modo: su tritono chocaría
+            con el contrapunto.</li>
+          </ul>
         </section>
 
         <section id="g-passes">
           <h3>Pases de acabado</h3>
-          <p>Con la rejilla de notas ya colocada, tres pases la retocan en este
+          <p>Con la rejilla de notas ya colocada, cuatro pases la retocan en este
           orden:</p>
           <dl class="guide-defs">
             <dt>Humanizador</dt><dd>las repeticiones se «gastan» (a partir de la
             segunda, alguna nota cae, se vuelve fantasma o gana un mordente); notas de
             paso que suavizan saltos amplios; articulación según el gesto (ligado en
             grados conjuntos, corte tras un salto aislado — no en texturas pendulares de
-            acorde quebrado o pedal); arco de dinámica por bloque; y
-            «respiraciones» antes de las fronteras de sección. La primera pasada y la
-            recapitulación suenan limpias.</dd>
+            acorde quebrado o pedal); dinámica según el plan formal (nivel del
+            carácter, perfil de intensidad hacia el clímax, rampa de la retransición)
+            con un arco por frase; y «respiraciones» antes de los finales de frase y
+            de sección. La primera pasada y la recapitulación suenan limpias.</dd>
             <dt>Energía</dt><dd>cuenta los ataques por célula frente a un presupuesto
-            que crece hacia un clímax en torno al 65 % de la pieza. Si hay demasiadas
+            que sigue el perfil de intensidad del plan formal (máximo en el clímax)
+            y la densidad del carácter de cada sección. Si hay demasiadas
             pistas atacando, las de fondo ceden sus notas más débiles y alargan la
             anterior. Nunca toca el primer plano, los tiempos fuertes ni la
             recapitulación.</dd>
+            <dt>Armonía</dt><dd>acerca cada nota de tiempo fuerte al acorde vigente
+            moviéndola un grado (en escalas de 7 y 5 notas siempre hay un tono del
+            acorde a un grado). En la cabeza de cada acorde y de medio compás no hay
+            excepciones; en los demás tiempos se toleran notas de paso y bordaduras
+            por grado conjunto, y los tiempos débiles quedan libres. La voz más grave
+            que ataca en la cabeza de un acorde baja a la fundamental si la tiene a
+            una tercera; en la retransición lo hace en cada medio compás, como un
+            pedal de dominante. No toca la recapitulación ni las notas finales, y es
+            determinista.</dd>
             <dt>Contrapunto</dt><dd>vigila lo que suena a la vez entre pistas: resuelve
             segundas, séptimas y tritonos moviendo una nota ±1 grado, apagándola o
-            acortándola, y abre unísonos a la octava. En tiempo fuerte garantiza que
-            no queden disonancias duras; en tiempo débil tolera notas de paso. Es
-            determinista, así que las secciones con la misma letra reciben las mismas
-            correcciones.</dd>
+            acortándola, y abre unísonos a la octava. Con plan armónico, en tiempo
+            fuerte cede la nota ajena al acorde y, al mover, prefiere caer en él. En
+            tiempo fuerte garantiza que no queden disonancias duras; en tiempo débil
+            tolera notas de paso. Es determinista, así que las secciones con la misma
+            letra reciben las mismas correcciones.</dd>
           </dl>
           <p>Ningún pase toca el tempo ni mueve notas en el tiempo: no hay rubato ni
           swing; el pulso es siempre el del slider ♩.</p>
@@ -474,8 +613,8 @@
           <p>Cada nota dura su <b>sustain × el hueco</b> hasta la siguiente nota de
           su pista: como mucho legato, nunca se pisa a sí misma. Al acercarse el
           final, las últimas células hacen diminuendo y la última nota de cada pista
-          se posa en la <b>tríada de tónica</b> — la más tardía en la tónica misma —
-          formando una cadencia. Tras el último paso sigue una coda en la que esas
+          se posa en el <b>acorde final</b> de la cadencia perfecta, la tríada de
+          tónica — la más tardía en la tónica misma —. Tras el último paso sigue una coda en la que esas
           notas se alargan y las pistas se desvanecen, mientras reverb y delay
           conservan su cola.</p>
         </section>
@@ -484,7 +623,7 @@
           <h3>Lo que controlas</h3>
           <ul>
             <li><b>Generación:</b> pistas, duración y tempo (fijos o al azar dentro de
-            un rango), contornos permitidos, forma, escala y tonalidad.</li>
+            un rango), contornos permitidos, forma, modulación, escala y tonalidad.</li>
             <li><b>Escala y tonalidad en vivo:</b> como la pieza guarda grados y no
             notas, cambiarlas re-afina la pieza en curso sin recomponerla — también
             mientras suena.</li>
@@ -528,6 +667,8 @@
        DOMContentLoaded; si el CDN falla, App deshabilita el botón Vista 3D -->
   <script type="module" src="js/visualizer3d.js"></script>
   <script src="js/generator.js"></script>
+  <script src="js/form.js"></script>
+  <script src="js/harmony.js"></script>
   <script src="js/humanizer.js"></script>
   <script src="js/energy.js"></script>
   <script src="js/counterpoint.js"></script>

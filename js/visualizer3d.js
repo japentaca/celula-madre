@@ -2050,10 +2050,14 @@ window.Visualizer3D = (() => {
     }
 
     // Etiquetas de sección sobre su órbita y de pista en el arranque de la
-    // primera, una por radio (la misma leyenda vale para todas las órbitas)
+    // primera, una por radio (la misma leyenda vale para todas las órbitas).
+    // Las regiones en otro modo (relativo, homónimo: el faro es su tónica)
+    // lo dicen en la etiqueta, para distinguir Do mayor de Do menor
+    const MODE_NAMES = { major: 'mayor', minor: 'menor', dorian: 'dórica', mixolydian: 'mixolidia' };
     piece.sections.forEach((section, i) => {
       const sec = sections[i];
-      const label = makeTextSprite(sectionLabel(section), section.recap ? '#ffb547' : '#a3a19b', 1.7);
+      const mode = section.localScale && section.localScale !== piece.scale ? MODE_NAMES[section.localScale] : null;
+      const label = makeTextSprite(sectionLabel(section) + (mode ? ' · ' + mode : ''), section.recap ? '#ffb547' : '#a3a19b', 1.7);
       label.position.set(sec.cx, F_H + 2.6, sec.cz);
       cityGroup.add(label);
     });
@@ -2065,10 +2069,14 @@ window.Visualizer3D = (() => {
     }
 
     // Notas: cajas tangentes a la órbita, largo proporcional al arco de su
-    // duración, altura por velocity. Las alteradas por la modulación suave
-    // (su midi difiere del de la tonalidad base) se inclinan hacia fuera del
-    // anillo y brillan más: ahí se ve la modulación
-    const canCompare = typeof Generator !== 'undefined' && typeof Generator.degreeToMidi === 'function';
+    // duración, altura por velocity. Las alteradas — fuera de la armadura de
+    // la tonalidad base (lo que la modulación cambia: Fa# en Sol, Sib en Fa)
+    // o con alteración del plan armónico (sensible, dominante secundaria) —
+    // se inclinan hacia fuera del anillo y brillan más: ahí se ve la modulación
+    const canCompare = typeof Generator !== 'undefined' && !!Generator.SCALES;
+    const homePcs = canCompare
+      ? new Set((Generator.SCALES[piece.scale] || Generator.SCALES.major).map(iv => (key + iv) % 12))
+      : null;
     const altered = [];
     let i = 0;
     const tmp = new THREE.Vector3();
@@ -2080,8 +2088,7 @@ window.Visualizer3D = (() => {
       // duración cruce la frontera
       const mid = s + durationSteps / 2;
       const phi = orbitPhi(sec, mid);
-      const isAltered = canCompare && cell.keyOffset
-        && Generator.degreeToMidi(cell.degree, piece.scale, piece.key) !== cell.midi;
+      const isAltered = canCompare && (!!cell.alter || !homePcs.has(((cell.midi % 12) + 12) % 12));
       orbitXZ(sec, mid, t, tmp);
       if (isAltered) {
         tmp.x += 0.3 * Math.sin(phi);

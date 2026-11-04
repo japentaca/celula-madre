@@ -1470,6 +1470,68 @@ const Generator = (() => {
     return midi;
   }
 
+  // Modos de modulación (selector del diálogo Generación). 'real' reinterpreta
+  // los grados sobre la tónica de cada sección; 'soft' es la modulación suave
+  // de degreeToMidiInKey; 'none' deja toda la pieza en la tonalidad base
+  const MODULATIONS = ['real', 'soft', 'none'];
+
+  // Opción «Aleatoria» del selector: se sortea en cada generación, con la
+  // real más probable (es la que más se oye) y «ninguna» como excepción
+  const RANDOM_MODULATION_WEIGHTS = { real: 0.5, soft: 0.3, none: 0.2 };
+
+  function resolveModulation(choice) {
+    if (MODULATIONS.includes(choice)) return choice;
+    let r = Math.random();
+    for (const m of MODULATIONS) {
+      r -= RANDOM_MODULATION_WEIGHTS[m];
+      if (r < 0) return m;
+    }
+    return MODULATIONS[0];
+  }
+
+  // Modos locales relativos a la escala de la pieza (campo `mode` de sección
+  // y celda), solo con modulación real: [escala local, tónica en semitonos
+  // sobre la de la región]. 'relative' cambia de género conservando la
+  // armadura (Do mayor -> La menor; en dórica, Re -> Do mayor; en mixolidia,
+  // Sol -> La menor); 'parallel' es el homónimo, misma tónica con la otra
+  // tercera (mixtura modal: mayor <-> menor, dórica <-> mixolidia). Las
+  // pentatónicas y la cromática no tienen relativo ni homónimo
+  const MODE_RELATIONS = {
+    major: { relative: ['minor', 9], parallel: ['minor', 0] },
+    minor: { relative: ['major', 3], parallel: ['major', 0] },
+    dorian: { relative: ['major', 10], parallel: ['mixolydian', 0] },
+    mixolydian: { relative: ['minor', 2], parallel: ['dorian', 0] }
+  };
+
+  // Región tonal: keyOffset (semitonos que se transporta la tonalidad de la
+  // pieza, 7 × quintas mod 12) y mode (ausente o una relación). Devuelve la
+  // escala local, su tónica en semitonos 0-11 sobre la base y `shift`, el
+  // transporte efectivo con signo en [-6, 5]: la octava más cercana, para que
+  // modular no arrastre la melodía de registro
+  function regionOf(scaleName, keyOffset, mode) {
+    const rel = mode && MODE_RELATIONS[scaleName] && MODE_RELATIONS[scaleName][mode];
+    const tonic = (((keyOffset || 0) + (rel ? rel[1] : 0)) % 12 + 12) % 12;
+    return { scale: rel ? rel[0] : (SCALES[scaleName] ? scaleName : 'major'), tonic, shift: tonic >= 6 ? tonic - 12 : tonic };
+  }
+
+  // Altura MIDI de un grado en la región de una celda (o de cualquier objeto
+  // con keyOffset, mode y alter). Es LA derivación de midi de toda la pieza:
+  // midi === cellMidi(degree, scale, key, cell, modulation). Con modulación
+  // real la escala se transporta de verdad (el grado 0 es la tónica local);
+  // con 'soft' se usa degreeToMidiInKey. `alter` (semitonos, sensibles y
+  // dominantes secundarias que escribe Harmony) se suma al final, igual que
+  // `octave` (octavas enteras: el registro de la sección, que elige el plan
+  // formal según el carácter de su letra y la sección anterior; no toca el
+  // grado, que sigue en [-7, 7])
+  function cellMidi(degree, scaleName, key, region, modulation) {
+    const alter = (region && region.alter) || 0;
+    const octave = 12 * ((region && region.octave) || 0);
+    const keyOffset = (region && region.keyOffset) || 0;
+    if (modulation === 'soft') return degreeToMidiInKey(degree, scaleName, key, keyOffset) + alter + octave;
+    const r = regionOf(scaleName, keyOffset, region && region.mode);
+    return degreeToMidi(degree, r.scale, key + r.shift) + alter + octave;
+  }
+
   // --- Utilidades compartidas por los pases sobre la pieza compuesta ---
   // (humanizer, energy, counterpoint y composer cargan después de este módulo)
 
@@ -1513,6 +1575,11 @@ const Generator = (() => {
     parseForm,
     degreeToMidi,
     degreeToMidiInKey,
+    MODULATIONS,
+    resolveModulation,
+    MODE_RELATIONS,
+    regionOf,
+    cellMidi,
     GHOST_VELOCITY,
     MAX_SUSTAIN_STEPS,
     buildBlockMap,

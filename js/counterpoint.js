@@ -9,23 +9,22 @@ const Counterpoint = (() => {
   // calcular duraciones
   const { GHOST_VELOCITY, MAX_SUSTAIN_STEPS } = Generator;
 
-  function midiFor(ctx, degree, keyOffset) {
-    return Generator.degreeToMidiInKey(degree, ctx.scale, ctx.key, keyOffset);
-  }
-
   // Disonancia dura entre dos notas simultáneas. En escalas de >= 6 grados la
   // distancia de grados mod n clasifica segundas (1) y séptimas (n-1) — regla
-  // estable frente a retune entre escalas del mismo largo; el tritono se mira
-  // en semitonos. En pentatónica no hay clases de grado disonantes y se mira
-  // todo en semitonos
+  // estable frente a retune entre escalas del mismo largo; el tritono y las
+  // segundas menores / séptimas mayores (que con alteraciones pueden caer en
+  // la misma clase de grado: Sol contra Sol#) se miran en semitonos. Los
+  // grados solo son comparables dentro de una misma región tonal (keyOffset y
+  // mode); entre notas de regiones distintas (una sostenida que cruza una
+  // modulación) y en pentatónica se mira todo en semitonos
   function isDissonant(a, b, scaleLen) {
     const si = Math.abs(a.midi - b.midi) % 12;
-    if (si === 6) return true;
-    if (scaleLen >= 6) {
+    if (si === 6 || si === 1 || si === 11) return true;
+    if (scaleLen >= 6 && Harmony.sameRegion(a, b)) {
       const dd = Math.abs(a.degree - b.degree) % scaleLen;
       return dd === 1 || dd === scaleLen - 1;
     }
-    return si === 1 || si === 2 || si === 10 || si === 11;
+    return si === 2 || si === 10;
   }
 
   // Nota de paso tolerada en tiempo débil: llega por grado conjunto desde una
@@ -50,11 +49,15 @@ const Counterpoint = (() => {
     }
   }
 
-  // ctx: { grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key }
+  // ctx: { grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key, modulation, harmony }
   // Recorre la pieza paso a paso vigilando las verticalidades entre pistas:
   //   1. Ataques disonantes entre sí: en tiempo débil se toleran si son nota de
   //      paso; si no, la nota de menor peso se mueve ±1 grado a la consonancia
-  //      más cercana (preferencia descendente) o, si no hay, se vuelve fantasma.
+  //      más cercana o, si no hay, se vuelve fantasma. Con plan armónico
+  //      (ctx.harmony) el acorde vigente decide: en tiempo fuerte los tonos del
+  //      acorde pesan más que cualquier nota ajena (se aceptan primero y es la
+  //      ajena la que cede), y al mover se prefiere el grado que cae en el
+  //      acorde; si no, preferencia descendente.
   //   2. Unísonos exactos entre ataques se abren a la octava libre (36..96);
   //      salvo las notas de paso toleradas, cuya octava no se toca (su grado
   //      conjunto es lo que las justifica y el pase perdería idempotencia).
@@ -64,11 +67,13 @@ const Counterpoint = (() => {
   //      empezó más tarde.
   // Corre tras humanizar y ANTES de calcular duraciones. Nunca añade, quita ni
   // desplaza notas (los huecos no cambian); solo escribe degree/sustain/velocity
-  // y deriva midi de los grados, para que retune siga funcionando en vivo
+  // y deriva midi de los grados (con la alteración del acorde vigente,
+  // Harmony.setPitch), para que retune siga funcionando en vivo
   function enforce(ctx) {
     const stats = { unisons: 0, moved: 0, ghosted: 0, cut: 0, notes: 0 };
     if (INTENSITY === 0) return stats;
     const scaleLen = (Generator.SCALES[ctx.scale] || Generator.SCALES.major).length;
+    const chords = Harmony.chordMap(ctx);
 
     // Posiciones de nota por pista (estables: el pase no añade ni quita notas)
     const notePositions = ctx.grid.map(row => {
@@ -108,8 +113,17 @@ const Counterpoint = (() => {
 
       // 1. Ataques contra ataques, de mayor a menor peso; los fantasmas no
       // entran en `accepted` para no encadenar correcciones contra notas casi
-      // inaudibles
-      const sorted = attacks.slice().sort((a, b) => b.cell.velocity - a.cell.velocity || a.t - b.t);
+      // inaudibles. Antes que el peso: las notas finales (Humanizer.shapeEnding,
+      // ya en el acorde de cierre) y, solo en tiempo fuerte, los tonos del
+      // acorde vigente — ahí el resultado queda libre de disonancias y el pase
+      // sigue idempotente; en tiempo débil las notas de paso toleradas
+      // dependen del orden por peso
+      const chord = chords && chords[s];
+      const inChord = (cell, degree = cell.degree) => (chord && Harmony.isChordTone(chord, degree, scaleLen, cell) ? 1 : 0);
+      const sorted = attacks.slice().sort((a, b) =>
+        (b.cell.final ? 1 : 0) - (a.cell.final ? 1 : 0) ||
+        (strong ? inChord(b.cell) - inChord(a.cell) : 0) ||
+        b.cell.velocity - a.cell.velocity || a.t - b.t);
       const accepted = [];
       // Disonancias toleradas por ser nota de paso: el grado conjunto con la
       // nota anterior es lo que las justifica, así que no pueden cambiar de
@@ -125,14 +139,14 @@ const Counterpoint = (() => {
           continue;
         }
         let fixed = false;
-        for (const delta of [-1, 1]) {
+        const deltas = chord && !inChord(cell, cell.degree - 1) && inChord(cell, cell.degree + 1) ? [1, -1] : [-1, 1];
+        for (const delta of deltas) {
           const degree = cell.degree + delta;
           if (degree < -7 || degree > 7) continue;
-          const midi = midiFor(ctx, degree, cell.keyOffset);
-          const cand = { degree, midi };
+          const midi = Harmony.midiAt(ctx, s, cell, degree);
+          const cand = { degree, midi, keyOffset: cell.keyOffset, mode: cell.mode, octave: cell.octave };
           if (accepted.every(o => !isDissonant(cand, o.cell, scaleLen) && o.cell.midi !== midi)) {
-            cell.degree = degree;
-            cell.midi = midi;
+            Harmony.setPitch(ctx, s, cell, degree);
             stats.moved++;
             fixed = true;
             break;
@@ -159,15 +173,13 @@ const Counterpoint = (() => {
           // convertiría en un salto de registro. Si no cabe, queda el unísono
           const canUp = cell.degree + scaleLen <= 7;
           const canDown = cell.degree - scaleLen >= -7;
-          const up = midiFor(ctx, cell.degree + scaleLen, cell.keyOffset);
-          const down = midiFor(ctx, cell.degree - scaleLen, cell.keyOffset);
+          const up = Harmony.midiAt(ctx, s, cell, cell.degree + scaleLen);
+          const down = Harmony.midiAt(ctx, s, cell, cell.degree - scaleLen);
           if (canUp && !taken.has(up) && up <= 96) {
-            cell.degree += scaleLen;
-            cell.midi = up;
+            Harmony.setPitch(ctx, s, cell, cell.degree + scaleLen);
             stats.unisons++;
           } else if (canDown && !taken.has(down) && down >= 36) {
-            cell.degree -= scaleLen;
-            cell.midi = down;
+            Harmony.setPitch(ctx, s, cell, cell.degree - scaleLen);
             stats.unisons++;
           }
         }

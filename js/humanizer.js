@@ -2,8 +2,16 @@ const Humanizer = (() => {
   // Intensidad global de la humanización (0 = partitura literal, 1 = normal)
   const INTENSITY = 1;
 
-  function midiFor(ctx, degree, keyOffset) {
-    return Generator.degreeToMidiInKey(degree, ctx.scale, ctx.key, keyOffset);
+  // Toda nota que se añade o altera recibe su altura con Harmony.setPitch:
+  // grado, alteración del acorde vigente (cell.alter) y midi derivado de
+  // ambos con la región y el registro de la nota (keyOffset, mode, octave) —
+  // retune-safe
+  function newNote(ctx, s, anchor, degree, velocity, sustain) {
+    const cell = { midi: 0, degree, keyOffset: anchor.keyOffset, velocity, sustain, motifIndex: anchor.motifIndex };
+    if (anchor.mode) cell.mode = anchor.mode;
+    if (anchor.octave) cell.octave = anchor.octave;
+    Harmony.setPitch(ctx, s, cell, degree);
+    return cell;
   }
 
   // Las repeticiones de un bloque se van "gastando": a partir de la segunda,
@@ -32,14 +40,7 @@ const Humanizer = (() => {
             let dir = Math.random() < 0.5 ? -1 : 1;
             if (Math.abs(cell.degree + dir) > 7) dir = -dir;
             const degree = cell.degree + dir;
-            row[s - 1] = {
-              midi: midiFor(ctx, degree, cell.keyOffset),
-              degree,
-              keyOffset: cell.keyOffset,
-              velocity: Math.max(0.05, cell.velocity * 0.5),
-              sustain: 0.3,
-              motifIndex: cell.motifIndex
-            };
+            row[s - 1] = newNote(ctx, s - 1, cell, degree, Math.max(0.05, cell.velocity * 0.5), 0.3);
           }
         }
       }
@@ -64,14 +65,8 @@ const Humanizer = (() => {
               blockMap[t][prev] === blockMap[t][s] &&
               Math.random() < 0.6 * INTENSITY) {
             const degree = a.degree + Math.round(jump / 2);
-            row[prev + (gap >> 1)] = {
-              midi: midiFor(ctx, degree, a.keyOffset),
-              degree,
-              keyOffset: a.keyOffset,
-              velocity: Math.max(0.05, Math.min(a.velocity, b.velocity) * 0.7),
-              sustain: 0.6,
-              motifIndex: a.motifIndex
-            };
+            const at = prev + (gap >> 1);
+            row[at] = newNote(ctx, at, a, degree, Math.max(0.05, Math.min(a.velocity, b.velocity) * 0.7), 0.6);
           }
         }
         prev = s;
@@ -113,56 +108,57 @@ const Humanizer = (() => {
     }
   }
 
-  // Arco de intensidad por bloque (crece hacia el 60% y cede al final) y un
-  // eco sutil en las repeticiones impares para que la métrica respire
+  // Dinámica en tres escalas: el nivel del plan formal (carácter de la letra
+  // × perfil de intensidad de la pieza, que culmina en el mismo clímax que
+  // Energy y el plan tonal, × rampa de la retransición: FormPlan.levelAt),
+  // un arco por frase (crece hacia su 60 % y cede hacia la cadencia) y un eco
+  // sutil en las repeticiones impares de cada bloque para que la métrica
+  // respire. Sin frases (pases sueltos), el arco es el del bloque
   function shapeDynamics(ctx) {
     for (const marker of ctx.blockMarkers) {
       const row = ctx.grid[marker.trackIndex];
       for (let s = marker.startStep; s < marker.startStep + marker.lengthSteps; s++) {
         const cell = row[s];
         if (!cell) continue;
-        const t01 = (s - marker.startStep) / marker.lengthSteps;
-        const shape = t01 < 0.6 ? t01 / 0.6 : (1 - t01) / 0.4;
+        const section = Generator.sectionAt(ctx, s);
+        const span = FormPlan.phraseAt(section, s) || marker;
+        const shape = FormPlan.phraseArc((s - span.startStep) / span.lengthSteps);
         const rep = Math.floor((s - marker.startStep) / ctx.cellLength);
         const echo = rep % 2 === 1 ? 0.95 : 1;
-        cell.velocity = Math.max(0.05, Math.min(1, cell.velocity * (0.9 + 0.2 * shape * INTENSITY) * echo));
+        const level = 1 + (FormPlan.levelAt(ctx.form, section, s) - 1) * INTENSITY;
+        cell.velocity = Math.max(0.05, Math.min(1, cell.velocity * level * (0.92 + 0.16 * shape * INTENSITY) * echo));
       }
     }
   }
 
   // Antes de cada frontera de sección algunas pistas "toman aire": la última
-  // nota de la sección se acorta y, de vez en cuando, calla del todo
-  function addBreaths(ctx) {
-    for (let i = 0; i < ctx.sections.length - 1; i++) {
-      const sec = ctx.sections[i];
-      const end = sec.startStep + sec.lengthSteps;
-      for (let t = 0; t < ctx.numTracks; t++) {
-        const row = ctx.grid[t];
-        let last = -1;
-        for (let s = sec.startStep; s < end; s++) {
-          if (row[s]) last = s;
-        }
-        if (last < 0) continue;
-        const roll = Math.random();
-        if (roll < 0.3 * INTENSITY) row[last].sustain = 0.25;
-        else if (roll < 0.4 * INTENSITY) row[last] = null;
+  // nota de la sección se acorta y, de vez en cuando, calla del todo. En los
+  // finales de frase dentro de una sección (FormPlan) respiran menos y la
+  // pista que recapitula no, para que su retorno siga literal
+  function breatheBefore(ctx, start, end, shorten, drop, skipTrack) {
+    for (let t = 0; t < ctx.numTracks; t++) {
+      if (t === skipTrack) continue;
+      const row = ctx.grid[t];
+      let last = -1;
+      for (let s = start; s < end; s++) {
+        if (row[s]) last = s;
       }
+      if (last < 0) continue;
+      const roll = Math.random();
+      if (roll < shorten * INTENSITY) row[last].sustain = 0.25;
+      else if (roll < (shorten + drop) * INTENSITY) row[last] = null;
     }
   }
 
-  // Grados de la tríada de tónica en la escala: el índice cuyo intervalo queda
-  // más cerca de la tercera (3-4 semitonos) y de la quinta (7). Sirve para
-  // pentatónicas y cromática, donde los grados 2 y 4 no son tercera y quinta
-  function tonicTriad(scale) {
-    const intervals = Generator.SCALES[scale] || Generator.SCALES.major;
-    const nearest = target => {
-      let best = 0;
-      intervals.forEach((iv, idx) => {
-        if (Math.abs(iv - target) < Math.abs(intervals[best] - target)) best = idx;
-      });
-      return best;
-    };
-    return { size: intervals.length, degrees: [0, nearest(3.5), nearest(7)] };
+  function addBreaths(ctx) {
+    ctx.sections.forEach((sec, i) => {
+      const phrases = sec.phrases || [];
+      for (let j = 0; j < phrases.length - 1; j++) {
+        const p = phrases[j];
+        breatheBefore(ctx, p.startStep, p.startStep + p.lengthSteps, 0.25, 0.05, sec.recap ? sec.recapTrack : -1);
+      }
+      if (i < ctx.sections.length - 1) breatheBefore(ctx, sec.startStep, sec.startStep + sec.lengthSteps, 0.3, 0.1, -1);
+    });
   }
 
   function nearestDegree(degree, pool, size) {
@@ -183,9 +179,11 @@ const Humanizer = (() => {
   }
 
   // Final de la pieza: diminuendo sobre las últimas células y, en la última,
-  // la nota final de cada pista se posa en la tríada de tónica (la que ataca
-  // más tarde, en la tónica misma) y queda ligada y marcada `final` para que
-  // el transporte la deje sonar en la coda (Composer.ENDING_TAIL_STEPS)
+  // la nota final de cada pista se posa en el acorde de cierre del plan
+  // armónico — la I de la cadencia perfecta; sin plan (cromática), la tríada
+  // de tónica — (la que ataca más tarde, en la tónica misma) y queda ligada y
+  // marcada `final` para que el transporte la deje sonar en la coda
+  // (Composer.ENDING_TAIL_STEPS)
   function shapeEnding(ctx) {
     const { grid, totalSteps, cellLength } = ctx;
     const window = Math.min(totalSteps, Math.max(cellLength, Math.floor(totalSteps / 8)), cellLength * 2);
@@ -210,19 +208,18 @@ const Humanizer = (() => {
       }
     });
     if (!finals.length) return;
-    const triad = tonicTriad(ctx.scale);
+    const triad = Harmony.finalChord(ctx);
     const latest = finals.reduce((a, b) => (b.s > a.s ? b : a));
     for (const f of finals) {
-      const pool = f === latest ? [0] : triad.degrees;
-      f.cell.degree = nearestDegree(f.cell.degree, pool, triad.size);
-      f.cell.midi = midiFor(ctx, f.cell.degree, f.cell.keyOffset);
+      const pool = f === latest ? [triad.root] : triad.degrees;
+      Harmony.setPitch(ctx, f.s, f.cell, nearestDegree(f.cell.degree, pool, triad.size));
       f.cell.sustain = 1;
       f.cell.velocity = Math.max(f.cell.velocity, 0.3);
       f.cell.final = true;
     }
   }
 
-  // ctx: { grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key }
+  // ctx: { grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key, modulation, harmony, form }
   // Debe correr tras colocar los motivos y ANTES de calcular duraciones (añade
   // y quita notas, así que los huecos cambian). Solo escribe grados y deja que
   // midi se derive de ellos, para que retune siga funcionando en vivo

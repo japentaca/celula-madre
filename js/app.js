@@ -81,8 +81,6 @@ const App = (() => {
     return {
       v: 1,
       ui: getUIState(),
-      audioEnabled: document.getElementById('checkbox-audio').checked,
-      midiOutput: document.getElementById('select-midi-out').value,
       midiClock: document.getElementById('checkbox-midi-clock').checked,
       fx: {
         delaydiv: document.getElementById('slider-delaydiv').value,
@@ -128,14 +126,12 @@ const App = (() => {
     v: 1,
     ui: {
       tempo: 96, numTracks: 6, duration: 8, preset: 'random', scale: 'random', contours: [],
-      key: 'random', formChoice: 'random', autogen: true, autorestart: true, kiosk: false,
+      key: 'random', formChoice: 'random', modulation: 'real', autogen: true, autorestart: true, kiosk: false,
       view: 'mobius',
       tracksRandom: true, tracksRange: [4, 7],
       durationRandom: true, durationRange: [2, 4],
       tempoRandom: true, tempoRange: [55, 101]
     },
-    audioEnabled: true,
-    midiOutput: '',
     midiClock: true,
     fx: { delaydiv: '8', feedback: '0.67', master: '0.88', revdecay: '8.3' },
     trackSettings: [
@@ -200,10 +196,15 @@ const App = (() => {
     setControl('select-scale', ui.scale, 'change');
     setControl('select-key', ui.key, 'change');
     setControl('select-form', ui.formChoice, 'change');
+    // Ajustes guardados antes del selector no lo traen: queda «Real» (HTML)
+    setControl('select-modulation', ui.modulation, 'change');
     setControl('checkbox-autogen', ui.autogen, 'change');
     setControl('checkbox-autorestart', ui.autorestart, 'change');
     setControl('checkbox-kiosk', ui.kiosk, 'change');
-    setControl('checkbox-audio', saved.audioEnabled, 'change');
+    // Ni el puerto MIDI ni la casilla Audio se restauran: el puerto se elige
+    // en cada carga (recargar con un puerto abierto, p. ej. loopMIDI, llega a
+    // colgar Chrome entero en Windows) y, sin puerto, el audio web va siempre
+    // encendido — restaurarlo apagado dejaba la pieza muda
     // Ajustes guardados antes del reloj MIDI no lo traen: queda el valor por defecto (activo)
     if (typeof saved.midiClock === 'boolean') setControl('checkbox-midi-clock', saved.midiClock, 'change');
     // compat: sesiones guardadas antes del selector de vista usaban viz3d bool
@@ -243,7 +244,7 @@ const App = (() => {
     return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  function setupMidi(savedOutput) {
+  function setupMidi() {
     const select = document.getElementById('select-midi-out');
     const audioCheckbox = document.getElementById('checkbox-audio');
     audioCheckbox.addEventListener('change', () => AudioEngine.setEnabled(audioCheckbox.checked));
@@ -264,13 +265,9 @@ const App = (() => {
       return;
     }
 
-    // Salida guardada de la sesión anterior, pendiente de que su puerto
-    // aparezca (los puertos llegan async y pueden conectarse en caliente)
-    let pendingOutput = savedOutput || null;
-
     const refreshOutputs = () => {
       const outputs = MidiEngine.getOutputs();
-      const current = select.value || pendingOutput;
+      const current = select.value;
       select.innerHTML = '';
       const none = document.createElement('option');
       none.value = '';
@@ -282,16 +279,12 @@ const App = (() => {
         option.textContent = out.name;
         select.appendChild(option);
       }
-      // conserva la selección (o restaura la guardada) si el puerto está conectado
+      // conserva la selección si el puerto sigue conectado
       if (current && outputs.some(o => o.id === current)) {
         select.value = current;
-        if (current === pendingOutput) {
-          MidiEngine.selectOutput(current);
-          pendingOutput = null;
-        }
       } else {
         // el puerto activo se desconectó: sin él la música quedaría muda
-        if (current && current !== pendingOutput) {
+        if (current) {
           MidiEngine.selectOutput(null);
           setAudio(true);
         }
@@ -310,8 +303,6 @@ const App = (() => {
     });
 
     select.addEventListener('change', () => {
-      // una elección manual anula la restauración pendiente
-      pendingOutput = null;
       MidiEngine.selectOutput(select.value || null);
       setAudio(!select.value);
     });
@@ -343,6 +334,9 @@ const App = (() => {
       // 'random' o semitonos 0-11; se resuelve al generar (Generator.resolveKey)
       key: (v => (v === 'random' ? v : parseInt(v)))(document.getElementById('select-key').value),
       formChoice: document.getElementById('select-form').value,
+      // 'real', 'soft', 'none' (Generator.MODULATIONS) o 'random'; rige desde la
+      // próxima generación
+      modulation: document.getElementById('select-modulation').value,
       autogen: document.getElementById('checkbox-autogen').checked,
       autorestart: document.getElementById('checkbox-autorestart').checked,
       kiosk: document.getElementById('checkbox-kiosk').checked,
@@ -471,7 +465,7 @@ const App = (() => {
   function setupUI(saved) {
     setupDialogs();
     setupContourMultiselect();
-    setupMidi(saved && saved.midiOutput);
+    setupMidi();
 
     const sliderTempo = document.getElementById('slider-tempo');
 
@@ -643,7 +637,8 @@ const App = (() => {
       cellLength,
       scale: Generator.resolveScale(ui.scale),
       key: Generator.resolveKey(ui.key),
-      repeatsByLetter: plan.repeats
+      repeatsByLetter: plan.repeats,
+      modulation: Generator.resolveModulation(ui.modulation)
     });
     updateRandomTonalityLabels();
     // El cursor de una pausa previa no vale para la pieza nueva (compose
@@ -653,8 +648,9 @@ const App = (() => {
     state.piece.motifContours = motifs.map(m => m.contour);
     const extraContours = [...new Set(motifs.slice(1).map(m => m.contour).filter(c => c !== motherCell.contour))];
     const contourInfo = extraContours.length ? `${motherCell.contour} (variaciones: ${extraContours.join(', ')})` : motherCell.contour;
-    const tonalPlan = state.piece.sections.map(s => s.fifthOffset).join(' → ');
-    console.log(`Pieza generada — ${numTracks} pistas, ${formatTime(state.piece.totalSteps * 15 / bpm)} (objetivo ${minutes} min), célula de ${cellLength} pasos, ♩=${bpm}, contorno: ${contourInfo}, forma: ${formStr}, ${optionText('select-key', state.piece.key)} ${optionText('select-scale', state.piece.scale)}, plan tonal (quintas): ${tonalPlan}`);
+    const tonalPlan = state.piece.sections.map(s => sectionKeyName(state.piece, s)).join(' → ');
+    const characters = state.piece.sections.map(s => `${s.label}:${s.character ? s.character.name : '?'}${s.climax ? '*' : ''}`).join(' ');
+    console.log(`Pieza generada — ${numTracks} pistas, ${formatTime(state.piece.totalSteps * 15 / bpm)} (objetivo ${minutes} min), célula de ${cellLength} pasos, ♩=${bpm}, contorno: ${contourInfo}, forma: ${formStr}, ${optionText('select-key', state.piece.key)} ${optionText('select-scale', state.piece.scale)}, plan tonal (${state.piece.modulation}): ${tonalPlan}, carácter (* clímax): ${characters}`);
 
     lastShownSecond = -1;
     renderPieceBar();
@@ -670,11 +666,13 @@ const App = (() => {
     return opt ? opt.textContent : String(value);
   }
 
-  // La opción "Aleatoria" de escala y tonalidad muestra lo que suena ahora,
+  // La opción "Aleatoria" de escala, tonalidad y modulación muestra lo que suena ahora,
   // como el selector de preset de cada pista
   function updateRandomTonalityLabels() {
     const piece = state.piece;
-    for (const [id, value] of [['select-scale', piece && piece.scale], ['select-key', piece && piece.key]]) {
+    const pairs = [['select-scale', piece && piece.scale], ['select-key', piece && piece.key],
+      ['select-modulation', piece && piece.modulation]];
+    for (const [id, value] of pairs) {
       const opt = document.querySelector(`#${id} option[value="random"]`);
       if (opt) opt.textContent = piece ? `Aleatoria (${optionText(id, value)})` : 'Aleatoria';
     }
@@ -877,6 +875,22 @@ const App = (() => {
     return optionText('select-key', ((semitones % 12) + 12) % 12);
   }
 
+  // Tonalidad real de una sección: su tónica local (section.tonic) y, si la
+  // región está en otro modo que la pieza (relativo, homónimo), ese modo —
+  // corto para la barra de secciones («Am»), largo para la guía («A menor»)
+  const SHORT_MODES = { minor: 'm', major: '', dorian: ' dór', mixolydian: ' mix' };
+  function sectionKeyName(piece, section, long) {
+    const tonic = keyName(piece.key + (section.tonic !== undefined ? section.tonic : section.keyOffset));
+    const local = section.localScale || piece.scale;
+    if (long) return `${tonic} ${optionText('select-scale', local).toLowerCase()}`;
+    return local === piece.scale ? tonic : tonic + (SHORT_MODES[local] || '');
+  }
+
+  const ARRIVALS = {
+    dominant: 'a la dominante', subdominant: 'a la subdominante',
+    relative: 'al relativo', parallel: 'al homónimo'
+  };
+
   function stepSeconds() {
     return 60 / getUIState().tempo / 4;
   }
@@ -909,12 +923,15 @@ const App = (() => {
     ].map(([label, value, cls]) => `<span class="${cls || ''}"><span class="fact-label">${label}</span><b>${escapeHtml(String(value))}</b></span>`).join('');
 
     bar.innerHTML = piece.sections.map((s, i) => {
-      const local = keyName(piece.key + s.keyOffset);
-      const fifths = s.fifthOffset ? ` (${s.fifthOffset > 0 ? '+' : ''}${s.fifthOffset} ${Math.abs(s.fifthOffset) === 1 ? 'quinta' : 'quintas'})` : '';
-      const title = `Sección ${s.label} · ${s.totalRepeats} repeticiones · tonalidad ${local}${fifths}${s.recap ? ' · recapitulación' : ''}`;
+      const local = sectionKeyName(piece, s);
+      const modulated = !!(s.keyOffset || s.mode);
+      const arrival = s.arrival ? ` (modula ${ARRIVALS[s.arrival]})` : '';
+      const character = s.character ? ` · carácter ${s.character.name}` : '';
+      const climax = s.climax ? ' · clímax' : '';
+      const title = `Sección ${s.label}${character} · ${s.totalRepeats} repeticiones · tonalidad ${sectionKeyName(piece, s, true)}${arrival}${climax}${s.recap ? ' · recapitulación' : ''}`;
       return `<div class="sec${s.recap ? ' recap' : ''}" data-index="${i}" style="flex: ${s.lengthSteps} 1 0" title="${escapeHtml(title)}">` +
         `<span class="sec-letter">${escapeHtml(s.label)}</span>` +
-        `<span class="sec-key${s.fifthOffset ? ' modulated' : ''}">${escapeHtml(local)}</span></div>`;
+        `<span class="sec-key${modulated ? ' modulated' : ''}">${escapeHtml(local)}</span></div>`;
     }).join('') + '<div class="section-fill"></div><div class="section-head"></div>';
 
     updatePosition(Composer.getIsPlaying() || state.cursorStep >= 0 ? state.cursorStep : -1);
@@ -932,30 +949,112 @@ const App = (() => {
     const letters = [...new Set(piece.sections.map(s => s.label))];
     const contours = piece.motifContours || [piece.contour];
     const otherContours = [...new Set(contours.slice(1).filter(c => c && c !== piece.contour))];
-    const peak = Math.max(...piece.sections.map(s => Math.abs(s.fifthOffset || 0)));
-    const dir = piece.sections.some(s => s.fifthOffset > 0) ? 'sostenidos' : 'bemoles';
     const recap = piece.sections.find(s => s.recap);
+    const chordSteps = [...new Set(piece.sections.map(s => s.chordSteps).filter(Boolean))];
+    const harmonyFact = !piece.harmony
+      ? 'sin plan armónico (la cromática no tiene tríadas por grados)'
+      : piece.harmony.active === false
+        ? 'plan en pausa: la escala actual (cromática) no tiene tríadas por grados'
+        : `una progresión por letra, un acorde cada ${chordSteps.join(' o ')} pasos, que arranca en cada frase; las frases internas cierran ` +
+          `en semicadencia (antecedente) o en cadencia perfecta o rota (consecuente); al final de sección, semicadencia, ` +
+          `preparación (pivote y V/x) antes de cada modulación y cadencia perfecta (V–I) al final; en menor y dórica el V lleva sensible`;
+    // Ruta del plan tonal: las tonalidades en orden, sin repetir las seguidas
+    // (la vuelta recorre la ida al revés)
+    const MODULATION_NAMES = { real: 'real', soft: 'suave', none: 'ninguna' };
+    const route = [];
+    for (const s of piece.sections) {
+      const name = sectionKeyName(piece, s, true);
+      if (route[route.length - 1] !== name) route.push(name);
+    }
+    const arrivals = [...new Set(piece.sections.map(s => s.arrival).filter(Boolean))].map(a => ARRIVALS[a]);
+    const tonalFact = piece.modulation === 'none'
+      ? 'sin modulación (Modulación: ninguna)'
+      : route.length > 1
+        ? `modulación ${MODULATION_NAMES[piece.modulation] || piece.modulation}: ${route.join(' → ')} (pasos ${arrivals.join(', ')})`
+        : 'sin modulación (pocas secciones)';
+    // Plan formal: clímax, vuelta de A y retransición
+    const formPlan = piece.form;
+    const ordinal = i => `la ${i + 1}.ª`;
+    let formFact = '—';
+    if (formPlan) {
+      const cs = piece.sections[formPlan.climaxSection];
+      const parts = [`clímax en la sección ${cs.label} (${ordinal(formPlan.climaxSection)}), al ${Math.round(100 * formPlan.climax)} % de la pieza: ` +
+        'ahí culminan a la vez la densidad (Energía), la dinámica y la lejanía tonal'];
+      if (formPlan.returnIndex > 0) parts.push(`vuelta de ${piece.sections[0].label} en ${ordinal(formPlan.returnIndex)} sección`);
+      const rt = formPlan.retransition;
+      if (rt) {
+        const bars = rt.lengthSteps / 16;
+        parts.push(`retransición al final de ${ordinal(rt.section)} sección: ${bars} ${bars === 1 ? 'compás' : 'compases'} sobre la dominante, en ${rt.shape}`);
+      }
+      formFact = parts.join('; ');
+    }
+    const characterFact = formPlan
+      ? letters.map(l => {
+        const c = formPlan.characters[l];
+        return `${l} ${c.name}`;
+      }).join(', ')
+      : '—';
     const facts = [
       ['Forma', `${form} — ${piece.sections.length} secciones con ${letters.length} materiales distintos (${letters.join(', ')})`],
+      ['Carácter', characterFact],
+      ['Plan formal', formFact],
       ['Tonalidad', `${keyName(piece.key)} ${optionText('select-scale', piece.scale).toLowerCase()}`],
       ['Célula', `${piece.cellLength} pasos (${piece.cellLength / 16} ${piece.cellLength === 16 ? 'compás' : 'compases'} de 4/4)`],
       ['Contorno', capitalize(piece.contour || '—') + (otherContours.length ? `; variaciones recontorneadas con ${otherContours.map(capitalize).join(', ')}` : '')],
       ['Motivos', `${contours.length}: la madre y ${contours.length - 1} variaciones`],
       ['Pistas', String(piece.numTracks)],
       ['Duración', `${formatTime(piece.totalSteps * stepSeconds())} a ♩=${getUIState().tempo} (${piece.totalSteps} pasos)`],
-      ['Plan tonal', peak ? `hasta ${peak} ${peak === 1 ? 'quinta' : 'quintas'} hacia los ${dir}, de vuelta a la tónica` : 'sin modulación (pocas secciones)'],
+      ['Armonía', harmonyFact],
+      ['Plan tonal', tonalFact],
       ['Recapitulación', recap ? `sección ${recap.label} (la ${piece.sections.indexOf(recap) + 1}.ª), pista ${recap.recapTrack + 1}` : 'ninguna']
     ];
+    // Progresión en bucle de la letra y el cierre real de la sección (los
+    // acordes de cadencia sustituyen al final del bucle); antes de una
+    // modulación, el pivote (con su cifrado en la tonalidad nueva) y el V/x
+    const CADENCES = { authentic: 'perfecta', half: 'semicadencia', modulating: 'prepara', deceptive: 'rota' };
+    const chordName = c => (c.pivotOf && !c.label.includes('/') ? `${c.label}=${c.pivotOf}` : c.label);
+    const harmonyOf = s => {
+      if (!piece.harmony || piece.harmony.active === false || !s.chords.length) return '—';
+      const close = s.chords.slice(-2).map(chordName).join('–');
+      return `${s.chords.slice(0, 4).map(c => c.label).join('–')}${s.chords.length > 4 ? '…' : ''} · ` +
+        `${CADENCES[s.cadence] || ''} ${close}`;
+    };
+    // Carácter: registro (octavas sobre la exposición), densidad y nivel
+    const DENSITY_NAMES = { sparse: 'textura rala', normal: 'textura media', dense: 'textura densa' };
+    const characterOf = s => {
+      const c = s.character;
+      if (!c) return '';
+      const reg = c.register > 0 ? 'agudo' : c.register < 0 ? 'grave' : 'registro medio';
+      const level = c.level > 1.02 ? 'forte' : c.level < 0.98 ? 'piano' : 'mezzo';
+      return `${c.name} · ${reg}, ${DENSITY_NAMES[c.density]}, ${level}, ${c.tracks.length} ${c.tracks.length === 1 ? 'pista' : 'pistas'}`;
+    };
+    const harmonyActive = !!(piece.harmony && piece.harmony.active !== false);
+    // Frases: cuántas, de cuántos compases, y la cadencia de cada una
+    const phrasesOf = s => {
+      if (!s.phrases || !s.phrases.length) return '';
+      const bars = s.phrases[0].lengthSteps / 16;
+      const cad = harmonyActive ? ': ' + s.phrases.map(p => CADENCES[p.cadence] || '·').join(' · ') : '';
+      return `${s.phrases.length} × ${bars} ${bars === 1 ? 'compás' : 'comp.'}${cad}`;
+    };
+    const roles = s => [
+      s.climax ? 'clímax' : '',
+      s.retransition ? `retransición (${s.retransition.shape})` : '',
+      s.recap ? 'recapitulación' : ''
+    ].filter(Boolean).join(' · ');
     const rows = piece.sections.map((s, i) => {
-      const fifths = s.fifthOffset ? `${s.fifthOffset > 0 ? '+' : '−'}${Math.abs(s.fifthOffset)}` : '0';
+      const fifths = s.fifthOffset ? ` (${s.fifthOffset > 0 ? '+' : '−'}${Math.abs(s.fifthOffset)})` : '';
       return `<tr${s.recap ? ' class="recap"' : ''}><td>${i + 1}</td><td><b>${escapeHtml(s.label)}</b></td>` +
-        `<td>${s.totalRepeats}×</td><td>${escapeHtml(keyName(piece.key + s.keyOffset))}</td><td>${fifths}</td>` +
-        `<td>${s.recap ? 'recapitulación' : ''}</td></tr>`;
+        `<td>${escapeHtml(characterOf(s))}</td>` +
+        `<td>${s.totalRepeats}×</td><td>${escapeHtml(sectionKeyName(piece, s, true) + fifths)}</td>` +
+        `<td>${s.arrival ? escapeHtml(ARRIVALS[s.arrival]) : ''}</td>` +
+        `<td>${escapeHtml(phrasesOf(s))}</td>` +
+        `<td>${escapeHtml(harmonyOf(s))}</td><td>${escapeHtml(roles(s))}</td></tr>`;
     }).join('');
     el.innerHTML =
       '<dl class="guide-facts">' + facts.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('') + '</dl>' +
-      '<table class="guide-sections"><thead><tr><th>#</th><th>Letra</th><th>Repeticiones</th><th>Tonalidad</th><th>Quintas</th><th></th></tr></thead>' +
-      `<tbody>${rows}</tbody></table>`;
+      '<div class="guide-table-wrap"><table class="guide-sections"><thead><tr><th>#</th><th>Letra</th><th>Carácter</th><th>Repeticiones</th>' +
+      '<th>Tonalidad (quintas)</th><th>Modula</th><th>Frases y cadencias</th><th>Acordes</th><th></th></tr></thead>' +
+      `<tbody>${rows}</tbody></table></div>`;
   }
 
   let lastShownSecond = -1;

@@ -5,13 +5,14 @@ const Energy = (() => {
   const INTENSITY = 1;
 
   // Presupuesto de ataques por paso entre todas las pistas: suelo en los
-  // extremos de la pieza y techo en el clímax. La curva es un arco que culmina
-  // hacia el 65% de la forma — el pase no solo evita la saturación, también da
+  // extremos de la pieza y techo en el clímax. La curva es el perfil de
+  // intensidad del plan formal (FormPlan.intensityAt, con el clímax en la
+  // sección más lejana del plan tonal), escalado por la densidad del carácter
+  // de la sección — el pase no solo evita la saturación, también da
   // dirección dramática (dos secciones con la misma letra pueden recibir
   // presupuestos distintos según dónde caigan, y eso es deliberado)
   const DENSITY_FLOOR = 0.9;
   const DENSITY_PEAK = 1.8;
-  const CLIMAX = 0.65;
 
   // Pistas que quedan siempre intactas como primer plano (las más salientes)
   function foregroundCount(numTracks) {
@@ -52,7 +53,7 @@ const Energy = (() => {
     }
   }
 
-  // ctx: { grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key }
+  // ctx: { grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key, form }
   // Repasa la pieza por ventanas de una repetición de célula (alineadas con las
   // secciones) vigilando la energía global: si los ataques audibles de todas
   // las pistas exceden el presupuesto de la ventana, las pistas menos salientes
@@ -117,9 +118,8 @@ const Energy = (() => {
         total += attacks.length;
       }
 
-      const f = (start + ctx.cellLength / 2) / ctx.totalSteps;
-      const curve = f < CLIMAX ? f / CLIMAX : (1 - f) / (1 - CLIMAX);
-      const budget = Math.round(ctx.cellLength * (DENSITY_FLOOR + (DENSITY_PEAK - DENSITY_FLOOR) * curve));
+      const curve = FormPlan.intensityAt(ctx.form, start + ctx.cellLength / 2, ctx.totalSteps);
+      const budget = Math.round(ctx.cellLength * (DENSITY_FLOOR + (DENSITY_PEAK - DENSITY_FLOOR) * curve) * FormPlan.budgetAt(section));
       if (total <= budget) continue;
       stats.overloaded++;
 

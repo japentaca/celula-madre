@@ -21,6 +21,17 @@ const Composer = (() => {
   // Límite del viaje por el ciclo de quintas: la tonalidad no se aleja más de
   // este número de quintas (en cualquiera de los dos sentidos) desde la base
   const MAX_FIFTH_STEPS = 4;
+  // Modulación real: peso de cada destino al trazar la ruta del plan tonal
+  // (tonalidades vecinas de la región en curso). En menor el primer destino
+  // natural es el relativo mayor; en mixolidia, la subdominante. Las escalas
+  // sin relativo (pentatónica, cromática) solo viajan por quintas
+  const ROUTE_WEIGHTS = {
+    major: { dominant: 3, subdominant: 2, relative: 3, parallel: 1 },
+    minor: { dominant: 2, subdominant: 2, relative: 4, parallel: 1 },
+    dorian: { dominant: 2, subdominant: 2, relative: 2, parallel: 1 },
+    mixolydian: { dominant: 1, subdominant: 3, relative: 2, parallel: 1 },
+    other: { dominant: 1, subdominant: 1 }
+  };
 
   // Compresión de dinámica al tocar (no altera la partitura): el rango audible
   // se estrecha hacia DYN_CENTER con razón DYN_RATIO (0.5 ≈ compresor 2:1)
@@ -46,8 +57,10 @@ const Composer = (() => {
   // Llena un tramo con motivos que no estén sonando ya en otras pistas (slotUsage).
   // Si el tramo entero no tiene motivo libre se parte en mitades; si ni un tramo
   // mínimo lo tiene, silencio: nunca se duplica un motivo entre pistas
-  // next (opcional) es el motivo del bloque que ya sigue al tramo, para no repetirlo
-  function fillSpan(slotStart, size, prev, motifCount, slotUsage, next = -1) {
+  // next (opcional) es el motivo del bloque que ya sigue al tramo, para no repetirlo.
+  // weights (opcional): preferencia de motivos del carácter de la letra
+  // (FormPlan): la madre domina en la exposición, las variaciones en el resto
+  function fillSpan(slotStart, size, prev, motifCount, slotUsage, next = -1, weights = null) {
     const used = new Set();
     for (let i = 0; i < size; i++) {
       for (const m of slotUsage[slotStart + i]) used.add(m);
@@ -57,15 +70,21 @@ const Composer = (() => {
       if (m !== prev && m !== next && !used.has(m)) candidates.push(m);
     }
     if (candidates.length) {
-      const motifIndex = candidates[Math.floor(Math.random() * candidates.length)];
+      const w = m => (weights ? weights[m] : 1);
+      let roll = Math.random() * candidates.reduce((a, m) => a + w(m), 0);
+      let motifIndex = candidates[candidates.length - 1];
+      for (const m of candidates) {
+        roll -= w(m);
+        if (roll <= 0) { motifIndex = m; break; }
+      }
       for (let i = 0; i < size; i++) slotUsage[slotStart + i].add(motifIndex);
       return [{ motifIndex, repeats: size }];
     }
     if (size > 1) {
       const half = size / 2;
-      const left = fillSpan(slotStart, half, prev, motifCount, slotUsage);
+      const left = fillSpan(slotStart, half, prev, motifCount, slotUsage, -1, weights);
       const lastLeft = left[left.length - 1].motifIndex;
-      const right = fillSpan(slotStart + half, half, lastLeft === null ? -1 : lastLeft, motifCount, slotUsage, next);
+      const right = fillSpan(slotStart + half, half, lastLeft === null ? -1 : lastLeft, motifCount, slotUsage, next, weights);
       return left.concat(right);
     }
     return [{ motifIndex: null, repeats: size }];
@@ -73,17 +92,17 @@ const Composer = (() => {
 
   // Secuencia de bloques de una pista dentro de una sección: cada bloque toca
   // un motivo (madre o variación) o calla; bloques adyacentes no repiten motivo
-  function buildTrackBlocks(totalRepeats, motifCount, slotUsage) {
+  function buildTrackBlocks(totalRepeats, motifCount, slotUsage, character) {
     const sizes = partitionRepeats(totalRepeats);
     const blocks = [];
     let prev = -1;
     let slot = 0;
     for (const size of sizes) {
-      if (Math.random() < 0.15) {
+      if (Math.random() < character.blockSilence) {
         blocks.push({ motifIndex: null, repeats: size });
         prev = -1;
       } else {
-        const span = fillSpan(slot, size, prev, motifCount, slotUsage);
+        const span = fillSpan(slot, size, prev, motifCount, slotUsage, -1, character.motifWeights);
         blocks.push(...span);
         const last = span[span.length - 1].motifIndex;
         prev = last === null ? -1 : last;
@@ -93,16 +112,19 @@ const Composer = (() => {
     return blocks;
   }
 
-  function buildSectionSpec(numTracks, motifCount, fixedRepeats) {
-    const totalRepeats = fixedRepeats ||
-      SECTION_REPEAT_CHOICES[Math.floor(Math.random() * SECTION_REPEAT_CHOICES.length)];
+  // Reparto de bloques de una letra según su carácter (FormPlan): solo tocan
+  // las pistas de su orquestación (character.tracks), con su probabilidad de
+  // bloque mudo y su preferencia de motivos. ensureCoverage tiene la última
+  // palabra: puede hacer entrar una pista fuera de la orquestación antes que
+  // dejar un silencio general
+  function buildSectionSpec(numTracks, motifCount, totalRepeats, character) {
     const slotUsage = Array.from({ length: totalRepeats }, () => new Set());
     const trackBlocks = [];
     for (let t = 0; t < numTracks; t++) {
-      const trackSilent = Math.random() < 0.2;
-      trackBlocks.push(trackSilent ? null : buildTrackBlocks(totalRepeats, motifCount, slotUsage));
+      const playing = character.tracks.includes(t);
+      trackBlocks.push(playing ? buildTrackBlocks(totalRepeats, motifCount, slotUsage, character) : null);
     }
-    ensureCoverage(trackBlocks, totalRepeats, motifCount, slotUsage);
+    ensureCoverage(trackBlocks, totalRepeats, motifCount, slotUsage, character.motifWeights);
     return { totalRepeats, trackBlocks };
   }
 
@@ -113,12 +135,12 @@ const Composer = (() => {
   // la sección, que conserva su papel de orquestación) lo rellena. El bloque se
   // bisecciona (invariante 1) y solo se rellenan las mitades sin cobertura; en
   // ellas no suena nada, así que siempre hay motivo libre (invariante 2)
-  function ensureCoverage(trackBlocks, totalRepeats, motifCount, slotUsage) {
+  function ensureCoverage(trackBlocks, totalRepeats, motifCount, slotUsage, weights = null) {
     const fillGap = (start, size, prev, next) => {
       let uncovered = 0;
       for (let i = start; i < start + size; i++) if (slotUsage[i].size === 0) uncovered++;
       if (uncovered === 0) return [{ motifIndex: null, repeats: size }];
-      if (uncovered === size) return fillSpan(start, size, prev, motifCount, slotUsage, next);
+      if (uncovered === size) return fillSpan(start, size, prev, motifCount, slotUsage, next, weights);
       const half = size / 2;
       const left = fillGap(start, half, prev, -1);
       const lastLeft = left[left.length - 1].motifIndex;
@@ -195,28 +217,231 @@ const Composer = (() => {
     return { cellLength, repeats, steps };
   }
 
-  // opts: { numTracks, motifs, formParts, cellLength, scale, key, repeatsByLetter? }
+  // Tonalidades vecinas de una región { fifths, mode }: dominante y
+  // subdominante (mismo modo), relativo (cambio de género con la misma
+  // armadura) y, solo desde la tónica, el homónimo (mixtura modal), del que se
+  // vuelve a casa sin seguir viajando
+  function neighborRegions(scale, region) {
+    const out = [];
+    if (region.mode === 'parallel') return out;
+    const hasRelations = !!Generator.MODE_RELATIONS[scale];
+    for (const d of [1, -1]) {
+      const fifths = region.fifths + d;
+      if (Math.abs(fifths) <= MAX_FIFTH_STEPS) out.push({ fifths, mode: region.mode, kind: d > 0 ? 'dominant' : 'subdominant' });
+    }
+    if (hasRelations) {
+      out.push({ fifths: region.fifths, mode: region.mode ? null : 'relative', kind: 'relative' });
+      if (!region.mode && region.fifths === 0) out.push({ fifths: 0, mode: 'parallel', kind: 'parallel' });
+    }
+    return out;
+  }
+
+  const sameRegion = (a, b) => a.fifths === b.fifths && (a.mode || null) === (b.mode || null);
+
+  // Lejanía tonal (índice en la ruta) de la sección i: arco que sube de la
+  // tónica hasta peak en la sección del clímax (c) y baja a la tónica en la
+  // del final del arco (end, la recapitulación); desde ahí, tónica. Entre
+  // secciones consecutivas cambia como mucho en 1 porque peak <= min(c, end - c)
+  function tonalLevel(i, peak, c, end) {
+    if (!peak || i <= 0 || i >= end) return 0;
+    return i <= c ? Math.round(peak * i / c) : Math.round(peak * (end - i) / (end - c));
+  }
+
+  // Plan tonal: arco compuesto de antemano y coordinado con el plan formal
+  // (FormPlan): la región más lejana cae en la sección del clímax de
+  // intensidad y la recapitulación vuelve a la tonalidad base. Se sortea una
+  // lejanía máxima (peak, acotada por MAX_FIFTH_STEPS y por las secciones
+  // que hay antes y después del clímax; la mayoría de las veces la máxima
+  // posible) y una ruta de peak regiones vecinas encadenadas; la sección i
+  // toca la región route[tonalLevel(i)]: se aleja hacia el clímax y vuelve
+  // por el mismo camino, terminando siempre en la tonalidad base. Así cada
+  // modulación va a una tonalidad vecina (preparable con un pivote y la
+  // dominante de destino) y solo cae en fronteras de sección. Al acercarse al
+  // clímax la ruta prefiere el lado de la dominante (tensión) y lejos de él
+  // la subdominante. 'soft' conserva el viaje por quintas en un sentido de
+  // la modulación suave; 'none' no modula
+  function planTonality(sections, scale, modulation, form) {
+    const c = form.climaxSection;
+    const end = form.tonalEnd;
+    const peakCap = modulation === 'none' || c < 1 || c >= end ? 0 : Math.min(MAX_FIFTH_STEPS, c, end - c);
+    const peak = peakCap > 0 ? (Math.random() < 0.6 ? peakCap : 1 + Math.floor(Math.random() * peakCap)) : 0;
+    form.peak = peak;
+    const route = [{ fifths: 0, mode: null, kind: null }];
+    if (modulation === 'soft') {
+      const flatBias = scale === 'minor' || scale === 'dorian' ? 0.7 : 0.3;
+      const dir = Math.random() < flatBias ? -1 : 1;
+      for (let i = 1; i <= peak; i++) route.push({ fifths: dir * i, mode: null, kind: dir > 0 ? 'dominant' : 'subdominant' });
+    } else {
+      const weights = ROUTE_WEIGHTS[scale] || ROUTE_WEIGHTS.other;
+      while (route.length <= peak) {
+        const cur = route[route.length - 1];
+        const options = neighborRegions(scale, cur).filter(r => !route.some(v => sameRegion(v, r)));
+        if (!options.length) break;
+        // Seguir en el mismo sentido por quintas pesa algo más que dar la
+        // vuelta; la tensión (paso k de peak hacia el clímax) inclina hacia la
+        // dominante
+        const tension = route.length / peak;
+        const bias = { dominant: 0.6 + 0.8 * tension, subdominant: 1.4 - 0.8 * tension };
+        const weighted = options.map(r => ({ r, w: (weights[r.kind] || 0) * (bias[r.kind] || 1) * (cur.kind && r.kind === cur.kind ? 1.5 : 1) }))
+          .filter(o => o.w > 0);
+        if (!weighted.length) break;
+        let roll = Math.random() * weighted.reduce((a, o) => a + o.w, 0);
+        let pick = weighted[weighted.length - 1].r;
+        for (const o of weighted) {
+          roll -= o.w;
+          if (roll <= 0) { pick = o.r; break; }
+        }
+        route.push(pick);
+      }
+    }
+    const top = route.length - 1;
+    sections.forEach((section, i) => {
+      const region = route[Math.min(top, tonalLevel(i, peak, c, end))];
+      section.fifths = region.fifths;
+      section.keyOffset = ((region.fifths * 7) % 12 + 12) % 12;
+      section.mode = region.mode;
+      describeRegion(section, scale, modulation);
+    });
+    // Cómo se llega a cada sección: el mismo tipo de paso a la ida y a la vuelta
+    sections.forEach((section, i) => {
+      const prev = sections[i - 1];
+      if (!prev || sameRegion(prev, section)) {
+        section.arrival = null;
+        return;
+      }
+      const df = section.fifths - prev.fifths;
+      section.arrival = df > 0 ? 'dominant' : df < 0 ? 'subdominant' : (prev.mode === 'parallel' || section.mode === 'parallel' ? 'parallel' : 'relative');
+    });
+  }
+
+  // Campos derivados de la región de una sección para la escala actual (se
+  // recalculan en retune): tónica local en semitonos sobre la base (`tonic`),
+  // escala local (`localScale`, distinta de la de la pieza en relativo y
+  // homónimo), transporte efectivo con signo (`shift`) y `fifthOffset`, la
+  // posición de la tónica local en el ciclo de quintas (la que dibuja la
+  // vista «fifths»): igual a `fifths` salvo en relativos, que se mueven por
+  // el ciclo hasta su tónica (La menor = +3 desde Do)
+  function describeRegion(section, scale, modulation) {
+    if (modulation === 'soft') {
+      section.tonic = section.keyOffset;
+      section.localScale = scale;
+      section.shift = 0;
+      section.fifthOffset = section.fifths;
+      return;
+    }
+    const r = Generator.regionOf(scale, section.keyOffset, section.mode);
+    section.tonic = r.tonic;
+    section.localScale = r.scale;
+    section.shift = r.shift;
+    const k = (r.tonic * 7) % 12;
+    section.fifthOffset = Math.abs(k - section.fifths) <= Math.abs(k - 12 - section.fifths) ? k : k - 12;
+  }
+
+  // Registro de cada sección (section.octave, octavas enteras que cellMidi
+  // suma sin tocar el grado): el transporte efectivo T (shift de la región
+  // con modulación real, 0 en suave y ninguna, más 12 × octave) se elige por
+  // programación dinámica sobre toda la pieza, entre las octavas que dejan T a
+  // menos de REGISTER_WINDOW semitonos del registro del carácter de la letra
+  // (12 × character.register), minimizando el salto de altura media entre
+  // secciones consecutivas (contenido de la letra + T, descontado el cambio
+  // de registro deliberado entre caracteres) más REGISTER_PULL × la distancia
+  // al registro del carácter. Así las modulaciones reales no arrastran la
+  // melodía de un tirón de 7 semitonos y la vuelta de A, en la tónica, cae
+  // siempre en su registro de exposición. Se fija al componer: retune
+  // conserva las octavas (re-describe shift, así que ida y vuelta es exacta)
+  const REGISTER_WINDOW = 8;
+  const REGISTER_MAX = 17;
+  const REGISTER_PULL = 0.5;
+  function planRegister(sections, motifs, scale, modulation) {
+    const content = sections.map(section => {
+      const local = modulation === 'real' ? section.localScale : scale;
+      let sum = 0;
+      let count = 0;
+      section.trackBlocks.forEach(blocks => {
+        if (!blocks) return;
+        for (const block of blocks) {
+          if (block.motifIndex === null) continue;
+          for (const step of motifs[block.motifIndex]) {
+            if (!step.note) continue;
+            sum += (Generator.degreeToMidi(step.degree, local, 0) - 60) * block.repeats;
+            count += block.repeats;
+          }
+        }
+      });
+      return count ? sum / count : 0;
+    });
+    const options = sections.map(section => {
+      const shift = modulation === 'real' ? section.shift : 0;
+      const target = 12 * section.character.register;
+      const all = [-2, -1, 0, 1, 2].map(k => ({ k, T: shift + 12 * k })).filter(o => Math.abs(o.T) <= REGISTER_MAX);
+      const near = all.filter(o => Math.abs(o.T - target) <= REGISTER_WINDOW);
+      return near.length ? near : [all.reduce((a, b) => (Math.abs(b.T - target) < Math.abs(a.T - target) ? b : a))];
+    });
+    const level = (i, o) => content[i] + o.T - 12 * sections[i].character.register;
+    const own = (i, o) => REGISTER_PULL * Math.abs(o.T - 12 * sections[i].character.register);
+    let costs = options[0].map(o => ({ cost: own(0, o), path: [o] }));
+    for (let i = 1; i < sections.length; i++) {
+      costs = options[i].map(o => {
+        let best = null;
+        for (const p of costs) {
+          const cost = p.cost + own(i, o) + Math.abs(level(i, o) - level(i - 1, p.path[p.path.length - 1]));
+          if (!best || cost < best.cost) best = { cost, path: p.path.concat(o) };
+        }
+        return best;
+      });
+    }
+    const best = costs.reduce((a, b) => (b.cost < a.cost ? b : a));
+    sections.forEach((section, i) => { section.octave = best.path[i].k; });
+  }
+
+  // opts: { numTracks, motifs, formParts, cellLength, scale, key, repeatsByLetter?, modulation? }
   // repeatsByLetter (de planDuration) fija las repeticiones de cada letra; sin
-  // él se sortean entre SECTION_REPEAT_CHOICES
+  // él se sortean entre SECTION_REPEAT_CHOICES. modulation: 'real' (por
+  // defecto), 'soft' o 'none' (Generator.MODULATIONS)
   function compose(opts) {
     const { numTracks, motifs, formParts, cellLength, scale, key, repeatsByLetter } = opts;
+    const modulation = Generator.MODULATIONS.includes(opts.modulation) ? opts.modulation : 'real';
+
+    // Repeticiones por letra (del plan de duración o sorteadas) y posiciones:
+    // el plan formal las necesita antes de repartir bloques
+    const repeatsOf = {};
+    for (const letter of formParts) {
+      if (!repeatsOf[letter]) {
+        repeatsOf[letter] = (repeatsByLetter && repeatsByLetter[letter]) ||
+          SECTION_REPEAT_CHOICES[Math.floor(Math.random() * SECTION_REPEAT_CHOICES.length)];
+      }
+    }
+    let pos = 0;
+    const sections = formParts.map(letter => {
+      const section = { label: letter, totalRepeats: repeatsOf[letter], startStep: pos, lengthSteps: cellLength * repeatsOf[letter], recap: false };
+      pos += section.lengthSteps;
+      return section;
+    });
+    const totalSteps = pos;
+
+    // Plan formal (FormPlan): carácter de cada letra (registro, densidad,
+    // orquestación, nivel, motivos), frases, clímax, vuelta de A y su
+    // retransición, y el perfil de intensidad que leen los pases
+    const form = FormPlan.plan(sections, { cellLength, numTracks, motifCount: motifs.length });
 
     // Cada letra de la forma comparte spec: "A" suena igual cada vez que aparece
     const specByLetter = {};
-    const sections = formParts.map(letter => {
-      if (!specByLetter[letter]) {
-        specByLetter[letter] = buildSectionSpec(numTracks, motifs.length, repeatsByLetter && repeatsByLetter[letter]);
+    for (const section of sections) {
+      if (!specByLetter[section.label]) {
+        specByLetter[section.label] = buildSectionSpec(numTracks, motifs.length, section.totalRepeats, section.character);
       }
-      const spec = specByLetter[letter];
-      return { label: letter, totalRepeats: spec.totalRepeats, trackBlocks: spec.trackBlocks, recap: false };
-    });
+      section.trackBlocks = specByLetter[section.label].trackBlocks;
+    }
 
-    // Recapitulación: en una sección al azar (no la primera), una pista vuelve a la
-    // célula original (o a una variación) durante toda la sección; las demás siguen
-    // sus bloques normales pero callan donde coincidirían con el motivo recapitulado
-    if (sections.length > 1) {
-      const recapIdx = 1 + Math.floor(Math.random() * (sections.length - 1));
-      const recapMotif = Math.random() < 0.5 || motifs.length === 1
+    // Recapitulación: en la vuelta final de A (o, si la forma no la tiene, en
+    // la última sección: form.recapIndex) una pista vuelve a la célula
+    // original (o a una variación) durante toda la sección; las demás siguen
+    // sus bloques normales pero callan donde coincidirían con el motivo
+    // recapitulado. En la vuelta de A pesa más la madre
+    if (form.recapIndex > 0) {
+      const recapIdx = form.recapIndex;
+      const motherChance = form.returnIndex === recapIdx ? 0.7 : 0.5;
+      const recapMotif = Math.random() < motherChance || motifs.length === 1
         ? 0
         : 1 + Math.floor(Math.random() * (motifs.length - 1));
       const base = sections[recapIdx];
@@ -224,50 +449,31 @@ const Composer = (() => {
       const candidates = [];
       base.trackBlocks.forEach((blocks, t) => { if (blocks !== null) candidates.push(t); });
       const recapTrack = Generator.pickRandom(candidates);
-      sections[recapIdx] = {
-        label: base.label,
-        totalRepeats: base.totalRepeats,
-        trackBlocks: base.trackBlocks.map((blocks, t) => {
-          if (t === recapTrack) return [{ motifIndex: recapMotif, repeats: base.totalRepeats }];
-          if (blocks === null) return null;
-          return blocks.map(b => (b.motifIndex === recapMotif ? { ...b, motifIndex: null } : b));
-        }),
-        recap: true,
-        recapTrack
-      };
+      base.trackBlocks = base.trackBlocks.map((blocks, t) => {
+        if (t === recapTrack) return [{ motifIndex: recapMotif, repeats: base.totalRepeats }];
+        if (blocks === null) return null;
+        return blocks.map(b => (b.motifIndex === recapMotif ? { ...b, motifIndex: null } : b));
+      });
+      base.recap = true;
+      base.recapTrack = recapTrack;
     }
 
-    const totalSteps = sections.reduce((sum, s) => sum + cellLength * s.totalRepeats, 0);
     const grid = Array.from({ length: numTracks }, () => new Array(totalSteps).fill(null));
     const stepEvents = Array.from({ length: totalSteps }, () => []);
     const blockMarkers = [];
 
-    // Plan tonal: la pieza sigue un arco compuesto de antemano sobre el ciclo
-    // de quintas, en vez de un paseo al azar. Se sortea un sentido por pieza
-    // (bemoles más probable en escalas menores) y una lejanía máxima (peak,
-    // acotada por MAX_FIFTH_STEPS y por el número de secciones); la tonalidad
-    // se aleja una quinta por sección hasta el clímax, se sostiene y regresa,
-    // terminando siempre en la tonalidad base. Las modulaciones solo caen en
-    // fronteras de sección — nunca en medio de un bloque — y cada nota guarda
-    // el keyOffset de su sección, lo que hace retune-safe la modulación. Sigue
-    // siendo suave: las alturas se conservan y solo se alteran las notas ajenas
-    // a la tonalidad del tramo (ver degreeToMidiInKey)
-    const numSections = sections.length;
-    const peakCap = Math.min(MAX_FIFTH_STEPS, Math.floor((numSections - 1) / 2));
-    const peak = peakCap > 0 ? 1 + Math.floor(Math.random() * peakCap) : 0;
-    const flatBias = scale === 'minor' || scale === 'dorian' ? 0.7 : 0.3;
-    const dir = Math.random() < flatBias ? -1 : 1;
-    sections.forEach((section, i) => {
-      section.fifthOffset = dir * Math.min(i, numSections - 1 - i, peak);
-      section.keyOffset = ((section.fifthOffset * 7) % 12 + 12) % 12;
-    });
-    let pos = 0;
+    // Plan tonal (planTonality): arco de regiones vecinas que vuelve a la
+    // tonalidad base; las modulaciones solo caen en fronteras de sección —
+    // nunca en medio de un bloque — y cada nota guarda la región de su sección
+    // (keyOffset y mode), lo que hace retune-safe la modulación
+    planTonality(sections, scale, modulation, form);
+    // Registro por sección (octava del transporte) según carácter y continuidad
+    planRegister(sections, motifs, scale, modulation);
     for (const section of sections) {
-      const sectionSteps = cellLength * section.totalRepeats;
       for (let t = 0; t < numTracks; t++) {
         const blocks = section.trackBlocks[t];
         if (blocks === null) continue;
-        let blockPos = pos;
+        let blockPos = section.startStep;
         for (const block of blocks) {
           const blockSteps = cellLength * block.repeats;
           if (block.motifIndex !== null) {
@@ -275,15 +481,17 @@ const Composer = (() => {
             for (let s = 0; s < blockSteps; s++) {
               const step = motif[s % motif.length];
               if (!step.note) continue;
-              const midi = Generator.degreeToMidiInKey(step.degree, scale, key, section.keyOffset);
-              grid[t][blockPos + s] = {
-                midi,
+              const cell = {
+                midi: Generator.cellMidi(step.degree, scale, key, section, modulation),
                 degree: step.degree,
                 keyOffset: section.keyOffset,
                 velocity: step.velocity,
                 sustain: step.sustain,
                 motifIndex: block.motifIndex
               };
+              if (section.mode) cell.mode = section.mode;
+              if (section.octave) cell.octave = section.octave;
+              grid[t][blockPos + s] = cell;
             }
             blockMarkers.push({
               trackIndex: t,
@@ -295,24 +503,41 @@ const Composer = (() => {
           blockPos += blockSteps;
         }
       }
-      section.startStep = pos;
-      section.lengthSteps = sectionSteps;
-      pos += sectionSteps;
     }
+
+    // Plan armónico: progresión por letra con cadencia al final de cada
+    // sección (section.chords). Se sortea sobre la rejilla recién colocada,
+    // para elegir progresiones que encajen con la melodía, y antes de
+    // humanizar, cuyo final se posa en el acorde de cierre. null en cromática.
+    // Las secciones que preceden a una modulación la preparan (pivote y
+    // dominante de la nueva tonalidad) y los V de menor llevan sensible:
+    // Harmony.spell escribe esas alteraciones (cell.alter) en la rejilla
+    const harmony = Harmony.plan({ sections, grid, numTracks, totalSteps, cellLength, scale, key, modulation, form });
+    const ctx = { grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key, modulation, harmony, form };
+    Harmony.spell(ctx);
 
     // Humanización: retoca notas, dinámica y articulación trabajando en grados;
     // debe ir antes de las duraciones porque añade/quita notas y cambia huecos
-    Humanizer.humanize({ grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key });
+    Humanizer.humanize(ctx);
 
     // Energía: si demasiadas pistas atacan a la vez, las menos salientes ceden
     // notas (menos y más largas). Va tras humanizar, para medir la textura
-    // real, y antes del contrapunto, que así vigila la textura ya aclarada
-    Energy.balance({ grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key });
+    // real, y antes de armonía y contrapunto, que así trabajan sobre la
+    // textura ya aclarada
+    Energy.balance(ctx);
+
+    // Armonía: acerca al acorde vigente las notas de tiempo fuerte (±1 grado)
+    // y lleva el bajo a la fundamental. Va tras Energy, que solo borra notas
+    // y alarga sustains (no le cambia las alturas y su saliencia apenas
+    // depende de ellas), para no armonizar notas que luego desaparecen; y
+    // antes del contrapunto, que tiene la última palabra sobre los choques
+    Harmony.apply(ctx);
 
     // Contrapunto: consonancia vertical entre pistas (mueve grados ±1, apaga o
-    // acorta notas). Va tras humanizar, para vigilar también las notas que la
-    // humanización añade, y antes de las duraciones, porque ajusta sustains
-    Counterpoint.enforce({ grid, blockMarkers, sections, numTracks, totalSteps, cellLength, scale, key });
+    // acorta notas), prefiriendo el acorde vigente. Va tras humanizar, para
+    // vigilar también las notas que la humanización añade, y antes de las
+    // duraciones, porque ajusta sustains
+    Counterpoint.enforce(ctx);
 
     // Duraciones: cada nota sostiene una fracción (sustain) del hueco hasta la
     // siguiente nota de su pista — legato como máximo, nunca superposición
@@ -331,7 +556,7 @@ const Composer = (() => {
       }
     }
 
-    piece = { sections, totalSteps, grid, stepEvents, blockMarkers, numTracks, cellLength, scale, key };
+    piece = { sections, totalSteps, grid, stepEvents, blockMarkers, numTracks, cellLength, scale, key, modulation, harmony, form };
     // Una pieza nueva invalida cualquier pausa pendiente de la anterior
     currentStep = 0;
     return piece;
@@ -343,15 +568,20 @@ const Composer = (() => {
 
   // Re-mapea los grados de la pieza actual a otra tonalidad/escala sin regenerarla;
   // funciona también en plena reproducción. Conserva la modulación por secciones
-  // aplicando el keyOffset guardado en cada nota. stepEvents apunta a las mismas
-  // celdas, así que basta con el grid
+  // aplicando la región (keyOffset, mode) guardada en cada nota; las regiones
+  // se re-describen para la escala nueva (el relativo de mayor es menor, el de
+  // menor es mayor…). stepEvents apunta a las mismas celdas, así que basta con
+  // el grid. El plan armónico se re-describe (calidad, cifrado y alteraciones:
+  // Harmony.refresh reescribe cell.alter) sin re-armonizar las notas
   function retune(scale, key) {
     if (!piece) return;
     piece.scale = scale;
     piece.key = key;
+    for (const section of piece.sections) describeRegion(section, scale, piece.modulation);
+    Harmony.refresh(piece);
     for (const row of piece.grid) {
       for (const cell of row) {
-        if (cell) cell.midi = Generator.degreeToMidiInKey(cell.degree, scale, key, cell.keyOffset);
+        if (cell) cell.midi = Generator.cellMidi(cell.degree, scale, key, cell, piece.modulation);
       }
     }
   }
