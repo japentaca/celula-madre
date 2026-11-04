@@ -14,7 +14,11 @@ const App = (() => {
     view: '2d',
     cursorStep: -1,
     // Arranque diferido de la siguiente pieza (respiro entre piezas)
-    nextPieceTimer: null
+    nextPieceTimer: null,
+    // Mute y solo por índice de pista (el pad cuenta como una más): solo en
+    // memoria, sobreviven a las generaciones pero no a recargar
+    mute: new Set(),
+    solo: new Set()
   };
 
   // ---- Despacho de visualización: todas las llamadas van a la vista activa.
@@ -713,6 +717,7 @@ const App = (() => {
     state.resolvedPresets = resolved;
     AudioEngine.setupTracks(configs);
     MidiEngine.setTrackChannels(Array.from({ length: allTracks }, (_, t) => settingsOf(t).midiChannel));
+    applyAudibility();
 
     updateRandomTonalityLabels();
     // El cursor de una pausa previa no vale para la pieza nueva (compose
@@ -733,6 +738,33 @@ const App = (() => {
     SynthEditor.ensureValid(allTracks);
     // los presets sorteados forman parte de lo que se restaura al recargar
     scheduleSave();
+  }
+
+  // Mute/solo → audible por pista en ambos motores. Con algún solo suenan solo
+  // las pistas en solo (los retornos no se ven afectados); el kiosco ignora
+  // ambos para no quedarse mudo sin interfaz a la vista
+  function applyAudibility() {
+    const kiosk = document.getElementById('checkbox-kiosk').checked;
+    const soloing = state.solo.size > 0;
+    for (let t = 0; t < currentNumTracks(); t++) {
+      const audible = kiosk || (!state.mute.has(t) && (!soloing || state.solo.has(t)));
+      AudioEngine.setTrackAudible(t, audible);
+      MidiEngine.setTrackMuted(t, !audible);
+    }
+  }
+
+  function toggleMute(t) {
+    if (state.mute.has(t)) state.mute.delete(t);
+    else state.mute.add(t);
+    applyAudibility();
+    return state.mute.has(t);
+  }
+
+  function toggleSolo(t) {
+    if (state.solo.has(t)) state.solo.delete(t);
+    else state.solo.add(t);
+    applyAudibility();
+    return state.solo.has(t);
   }
 
   function optionText(selectId, value) {
@@ -1329,6 +1361,7 @@ const App = (() => {
     checkbox.addEventListener('change', e => {
       updateWakeLock();
       pokeActivity();
+      applyAudibility();
       // solo un clic real (no la restauración de ajustes) entra o sale del
       // kiosco en el acto: pantalla completa y reproducción exigen gesto
       if (!e.isTrusted) return;
@@ -1406,7 +1439,11 @@ const App = (() => {
     document.addEventListener('change', scheduleSave);
   }
 
-  return { init, generate, play, stop };
+  return {
+    init, generate, play, stop, toggleMute, toggleSolo,
+    isMuted: t => state.mute.has(t),
+    isSoloed: t => state.solo.has(t)
+  };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {

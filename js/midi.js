@@ -6,6 +6,10 @@ const MidiEngine = (() => {
   // 'canal:nota' -> timestamp ms (performance.now) en que acaba la última nota
   // disparada; permite mandar note-offs explícitos al parar (acotado a 16×128)
   const activeNotes = new Map();
+  // Mute/solo resueltos por App. Por pista, 'canal:nota' -> { start, end }
+  // (performance.now) para cortar lo que suena al mutearla
+  const mutedTracks = new Set();
+  const trackNotes = new Map();
 
   // ---- Reloj MIDI (0xF8 ×24 por negra, start/continue/stop) ----
   // Sigue al Transport de Tone: cada tick lleva el timestamp de su tiempo de
@@ -147,8 +151,30 @@ const MidiEngine = (() => {
     return lastStamp;
   }
 
+  // Al mutear se mandan note-offs a las notas de la pista que no han acabado.
+  // Una nota ya encolada que aún no empezó (lookAhead de Tone) recibe el suyo
+  // 1 ms tras su note-on: con timestamp anterior el receptor lo descartaría
+  // y la nota sonaría entera
+  function setTrackMuted(index, muted) {
+    if (muted) {
+      if (mutedTracks.has(index)) return;
+      mutedTracks.add(index);
+      const notes = trackNotes.get(index);
+      trackNotes.delete(index);
+      if (!output || !notes) return;
+      const now = performance.now();
+      for (const [key, { start, end }] of notes) {
+        if (end <= now) continue;
+        const [channel, midi] = key.split(':').map(Number);
+        send([0x80 | channel, midi, 0], Math.max(now, start + 1));
+      }
+    } else {
+      mutedTracks.delete(index);
+    }
+  }
+
   function playNote(trackIndex, midi, time, durationSeconds, velocity) {
-    if (!output || midi < 0 || midi > 127) return;
+    if (!output || midi < 0 || midi > 127 || mutedTracks.has(trackIndex)) return;
     const channel = ((trackChannels[trackIndex] || 1) - 1) & 0x0f;
     const vel = Math.max(1, Math.min(127, Math.round(velocity * 127)));
     const stamp = toMidiTimestamp(time);
@@ -160,6 +186,9 @@ const MidiEngine = (() => {
       const key = channel + ':' + midi;
       const prev = activeNotes.get(key);
       if (!prev || end > prev) activeNotes.set(key, end);
+      let notes = trackNotes.get(trackIndex);
+      if (!notes) trackNotes.set(trackIndex, notes = new Map());
+      notes.set(key, { start: at, end });
     } catch (e) { /* puerto cerrado o mensaje inválido: nota descartada */ }
   }
 
@@ -168,6 +197,7 @@ const MidiEngine = (() => {
   // Note-offs explícitos por nota además de CC 123/120: muchos VSTs ignoran
   // los mensajes de modo de canal
   function allNotesOff() {
+    trackNotes.clear();
     if (!output) {
       activeNotes.clear();
       return;
@@ -362,6 +392,7 @@ const MidiEngine = (() => {
     hasOutput,
     setTrackChannels,
     setTrackChannel,
+    setTrackMuted,
     playNote,
     allNotesOff,
     setOnDevicesChanged,

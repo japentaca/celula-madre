@@ -3,6 +3,11 @@ const AudioEngine = (() => {
   let limiter = null;
   let reverb = null;
   let delay = null;
+  let masterMeter = null;
+  // Retornos de los auxiliares (0 reverb, 1 delay): bus→gain→master. El
+  // estado vive fuera del grafo porque este se crea tarde (ensureGraph)
+  const returnState = [{ level: 1, muted: false }, { level: 1, muted: false }];
+  let returns = [];
   let tracks = [];
   let contextStarted = false;
   // Render local WebAudio; se puede apagar desde el topbar cuando la salida
@@ -31,6 +36,8 @@ const AudioEngine = (() => {
   const DEFAULT_REVERB_DECAY = 3; // segundos
   let reverbDecay = DEFAULT_REVERB_DECAY;
   const DEFAULT_MASTER_VOLUME = 0.6;
+  // Rampa de mute: corta para responder en el acto, sin click
+  const MUTE_RAMP = 0.02;
 
   const PRESETS = {
     Synth: () => new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 } }),
@@ -159,10 +166,36 @@ const AudioEngine = (() => {
     return node;
   }
 
+  // Nodos de la cadena y sus flags de bypass, alineados por índice (el
+  // índice es el slot de setTrackEffectParams y setInsertBypass)
+  function buildInserts(specs) {
+    const chain = [];
+    const bypass = [];
+    for (const spec of specs || []) {
+      const node = makeEffect(spec);
+      if (!node) continue;
+      chain.push(node);
+      bypass.push(!!spec.bypass);
+    }
+    return { chain, bypass };
+  }
+
   function buildChain(preset) {
     const def = typeof preset === 'string' ? presetDef(preset) : preset;
-    if (!def || !def.chain) return [];
-    return def.chain.map(makeEffect).filter(Boolean);
+    return buildInserts(def && def.chain);
+  }
+
+  // Medidor de dos canales (Tone lo separa con un Split, un analizador por
+  // canal): getValue da [L, R] en dB
+  function makeMeter() {
+    return new Tone.Meter({ channelCount: 2, normalRange: false, smoothing: 0.8 });
+  }
+
+  function applyReturn(aux) {
+    const ret = returns[aux];
+    if (!ret) return;
+    const st = returnState[aux];
+    ret.gain.gain.rampTo(st.muted ? 0 : st.level, MUTE_RAMP);
   }
 
   function ensureGraph() {
@@ -171,11 +204,20 @@ const AudioEngine = (() => {
     // senoidales puras) la suma pasa de 0 dBFS y el DAC recorta con distorsión dura
     limiter = new Tone.Limiter(-1).toDestination();
     masterGain = new Tone.Gain(DEFAULT_MASTER_VOLUME).connect(limiter);
+    // Medidor tras el limitador: lo que sale de verdad
+    masterMeter = makeMeter();
+    limiter.connect(masterMeter);
     reverb = new Tone.Reverb({ decay: reverbDecay, wet: 1 });
     reverb.generate();
-    reverb.connect(masterGain);
     delay = new Tone.PingPongDelay({ delayTime, feedback: delayFeedback, wet: 1 });
-    delay.connect(masterGain);
+    returns = [reverb, delay].map((bus, aux) => {
+      const st = returnState[aux];
+      const gain = new Tone.Gain(st.muted ? 0 : st.level).connect(masterGain);
+      const meter = makeMeter();
+      gain.connect(meter);
+      bus.connect(gain);
+      return { gain, meter };
+    });
   }
 
   // Requiere gesto del usuario; se llama desde Play
@@ -218,14 +260,16 @@ const AudioEngine = (() => {
 
   // Conecta sinte→cadena de inserción→panner; el paneo va antes del canal (y
   // por tanto de los envíos) para que reverb y delay conserven la posición
-  // estéreo de la pista
+  // estéreo de la pista. Los inserts en bypass se saltan reconectando (EQ3 o
+  // Filter no tienen wet)
   function wireTrack(track) {
     try { track.synth.disconnect(); } catch (e) { /* ignore */ }
     for (const node of track.chain) {
       try { node.disconnect(); } catch (e) { /* ignore */ }
     }
+    const active = track.chain.filter((node, i) => !track.bypass[i]);
     let prev = track.synth;
-    for (const node of track.chain) {
+    for (const node of active) {
       prev.connect(node);
       prev = node;
     }
@@ -233,7 +277,7 @@ const AudioEngine = (() => {
     // mono lo que un chorus abre en estéreo. Con un efecto estéreo en la
     // cadena pasa a balance de dos canales; en el centro eso suena 3 dB más
     // que el paneo mono, y stereoTrim lo compensa
-    const stereo = track.chain.some(node => STEREO_EFFECTS.has(node.name));
+    const stereo = active.some(node => STEREO_EFFECTS.has(node.name));
     track.panner.channelCount = stereo ? 2 : 1;
     track.stereoTrim.gain.value = stereo ? Math.SQRT1_2 : 1;
     prev.connect(track.stereoTrim);
@@ -246,7 +290,9 @@ const AudioEngine = (() => {
     }
     try { track.stereoTrim.dispose(); } catch (e) { /* ignore */ }
     try { track.panner.dispose(); } catch (e) { /* ignore */ }
+    try { track.muteGain.dispose(); } catch (e) { /* ignore */ }
     try { track.channel.dispose(); } catch (e) { /* ignore */ }
+    try { track.meter.dispose(); } catch (e) { /* ignore */ }
     try { track.revSend.dispose(); } catch (e) { /* ignore */ }
     try { track.delSend.dispose(); } catch (e) { /* ignore */ }
   }
@@ -283,15 +329,27 @@ const AudioEngine = (() => {
       // sin efecto suelto)
       channel.connect(revSend);
       channel.connect(delSend);
+      // El StereoPannerNode sale siempre en dos canales aunque su entrada sea
+      // mono (channelCount 1), así que un medidor estéreo tras el canal da L/R
+      // reales sin Split propio
+      const meter = makeMeter();
+      channel.connect(meter);
+      // Mute en nodo propio antes del fader: no pisa las rampas de
+      // fadeOutTracks/restoreTrackLevels/retireTrack sobre channel.gain y,
+      // como los envíos cuelgan del canal, calla también reverb y delay
+      const muteGain = new Tone.Gain(1);
+      muteGain.connect(channel);
       const panner = new Tone.Panner(cfg.pan || 0);
-      panner.connect(channel);
+      panner.connect(muteGain);
       const stereoTrim = new Tone.Gain(1);
       stereoTrim.connect(panner);
+      const { chain, bypass } = buildChain(cfg.preset);
       const track = {
         synth: makeSynth(cfg.preset),
         presetName: typeof cfg.preset === 'string' ? cfg.preset : cfg.preset.base,
-        chain: buildChain(cfg.preset),
-        panner, stereoTrim, channel, revSend, delSend,
+        chain, bypass,
+        panner, stereoTrim, muteGain, channel, revSend, delSend, meter,
+        audible: true,
         // Niveles del usuario: fadeOutTracks baja el canal y
         // restoreTrackLevels vuelve a su nivel
         levels: { channel: cfg.volume, revSend: cfg.reverb, delSend: cfg.delay },
@@ -341,8 +399,72 @@ const AudioEngine = (() => {
     for (const node of track.chain) {
       try { node.dispose(); } catch (e) { /* ignore */ }
     }
-    track.chain = (chainSpec || []).map(makeEffect).filter(Boolean);
+    Object.assign(track, buildInserts(chainSpec));
     wireTrack(track);
+  }
+
+  // Alterna el bypass de un insert sin recrear nodos. Solo toca el motor: quien
+  // llama guarda `bypass` en el spec para que setTrackChain/setupTracks lo respeten
+  function setInsertBypass(index, slot, on) {
+    const track = tracks[index];
+    if (!track || slot < 0 || slot >= track.chain.length) return;
+    on = !!on;
+    if (track.bypass[slot] === on) return;
+    track.bypass[slot] = on;
+    wireTrack(track);
+  }
+
+  // Mute/solo ya resueltos por App: una pista no audible calla en muteGain
+  // (con sus envíos)
+  function setTrackAudible(index, audible) {
+    const track = tracks[index];
+    if (!track) return;
+    audible = !!audible;
+    if (track.audible === audible) return;
+    track.audible = audible;
+    try { track.muteGain.gain.rampTo(audible ? 1 : 0, MUTE_RAMP); } catch (e) { /* ignore */ }
+  }
+
+  function setReturnLevel(aux, gain) {
+    if (!returnState[aux]) return;
+    returnState[aux].level = gain;
+    applyReturn(aux);
+  }
+
+  function getReturnLevel(aux) {
+    return returnState[aux] ? returnState[aux].level : null;
+  }
+
+  function setReturnMute(aux, muted) {
+    if (!returnState[aux]) return;
+    returnState[aux].muted = !!muted;
+    applyReturn(aux);
+  }
+
+  function isReturnMuted(aux) {
+    return !!(returnState[aux] && returnState[aux].muted);
+  }
+
+  // Lectura única de todos los medidores (dB, -Infinity en silencio), para
+  // pedirla una vez por frame. Antes de crear el grafo todo es silencio
+  function readMeter(meter) {
+    if (!meter) return [-Infinity, -Infinity];
+    try {
+      const v = meter.getValue();
+      return Array.isArray(v) ? v : [v, v];
+    } catch (e) {
+      return [-Infinity, -Infinity];
+    }
+  }
+
+  function getMeters() {
+    return {
+      tracks: tracks.map(track => readMeter(track.meter)),
+      returns: [0, 1].map(aux => readMeter(returns[aux] && returns[aux].meter)),
+      master: readMeter(masterMeter),
+      // dB (≤ 0) que recorta el compresor interno del limitador
+      reduction: limiter ? limiter.reduction : 0
+    };
   }
 
   function setTrackEffectParams(index, fxIndex, params) {
@@ -454,9 +576,15 @@ const AudioEngine = (() => {
   function dispose() {
     for (const track of tracks) disposeTrack(track);
     tracks = [];
-    for (const node of [reverb, delay, masterGain, limiter]) {
+    for (const ret of returns) {
+      ret.gain.dispose();
+      ret.meter.dispose();
+    }
+    returns = [];
+    for (const node of [reverb, delay, masterGain, limiter, masterMeter]) {
       if (node) node.dispose();
     }
+    masterMeter = null;
     reverb = null;
     delay = null;
     masterGain = null;
@@ -472,6 +600,13 @@ const AudioEngine = (() => {
     getTrackSynthParams,
     setTrackChain,
     setTrackEffectParams,
+    setInsertBypass,
+    setTrackAudible,
+    setReturnLevel,
+    getReturnLevel,
+    setReturnMute,
+    isReturnMuted,
+    getMeters,
     setTrackVolume,
     fadeOutTracks,
     restoreTrackLevels,
