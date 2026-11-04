@@ -449,15 +449,48 @@ const Harmony = (() => {
     return map;
   }
 
+  // Altura sin alteración de una nota (o de un grado candidato) en su región
+  function naturalMidi(ctx, cell, degree) {
+    return Generator.cellMidi(degree, ctx.scale, ctx.key, { keyOffset: cell.keyOffset, mode: cell.mode, octave: cell.octave }, ctx.modulation);
+  }
+
+  // ¿La línea de la pista sigue en el sentido de la alteración? Una
+  // alteración es una nota de tendencia: la sensible (+1) sube a la tónica,
+  // la séptima de una dominante (−1) baja. Se escribe solo si la nota
+  // siguiente de la pista (sin alterar, para no depender de su propia
+  // alteración) queda igual o más allá en ese sentido, o si no hay
+  // siguiente: menor melódica, no armónica — Sol♯ bajando a Fa sonaba a nota
+  // falsa. Las repeticiones de la misma altura se saltan (Sol Sol La: las
+  // dos suben; Sol Sol Fa: ninguna, sin un Sol♯–Sol cromático en medio). Una
+  // celda que aún no está en la rejilla (adorno recién creado) se altera; el
+  // spell final de compose la deja coherente con su contexto
+  function resolves(ctx, s, cell, degree, alter) {
+    const row = ctx.grid.find(r => r[s] === cell);
+    if (!row) return true;
+    const own = naturalMidi(ctx, cell, degree);
+    for (let p = s + 1; p < row.length; p++) {
+      const next = row[p];
+      if (!next) continue;
+      const d = naturalMidi(ctx, next, next.degree) - own;
+      if (d === 0) continue;
+      return alter > 0 ? d > 0 : d < 0;
+    }
+    return true;
+  }
+
   // Alteración (semitonos) que corresponde al grado `degree` de una nota de
   // la región de `cell` en el paso s: la del acorde vigente para esa clase de
-  // grado (sensible del V en menor, notas de una dominante secundaria), o 0.
-  // Las notas de otra región (adornos junto a una frontera) no se alteran
+  // grado (sensible del V en menor, notas de una dominante secundaria) si la
+  // línea de la pista resuelve en su sentido (`resolves`), o 0. Las notas de
+  // otra región (adornos junto a una frontera) no se alteran. Depende de la
+  // nota siguiente de la pista, así que quien cambia o quita una nota deja
+  // desfasada la anterior: Composer.compose cierra con un `spell`
   function alterAt(ctx, s, cell, degree) {
     const map = chordMap(ctx);
     const chord = map && map[s];
     if (!chord || !chord.alters || !sameRegion(chord, cell)) return 0;
-    return chord.alters[mod(degree, scaleLength(ctx.scale))] || 0;
+    const alter = chord.alters[mod(degree, scaleLength(ctx.scale))] || 0;
+    return alter && resolves(ctx, s, cell, degree, alter) ? alter : 0;
   }
 
   // midi que tendría la nota `cell` del paso s con el grado `degree`
@@ -475,15 +508,22 @@ const Harmony = (() => {
     cell.midi = Generator.cellMidi(degree, ctx.scale, ctx.key, cell, ctx.modulation);
   }
 
-  // Aplica a toda la rejilla las alteraciones del plan (tras planificar y en
-  // cada retune): toda nota de la clase alterada mientras dura el acorde la
-  // lleva, también en tiempo débil, para que no convivan Sol y Sol#
+  // Aplica a toda la rejilla las alteraciones del plan (tras planificar, al
+  // cerrar los pases y en cada retune): toda nota de la clase alterada
+  // mientras dura el acorde la lleva si su línea resuelve, también en tiempo
+  // débil. Devuelve cuántas notas cambiaron de altura
   function spell(ctx) {
+    let changed = 0;
     for (const row of ctx.grid) {
       for (let s = 0; s < row.length; s++) {
-        if (row[s]) setPitch(ctx, s, row[s], row[s].degree);
+        const cell = row[s];
+        if (!cell) continue;
+        const before = cell.midi;
+        setPitch(ctx, s, cell, cell.degree);
+        if (cell.midi !== before) changed++;
       }
     }
+    return changed;
   }
 
   // Re-describe el plan tras un retune (no regenera: los grados relativos de

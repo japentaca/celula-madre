@@ -157,9 +157,15 @@ antes del contrapunto):
   m > 1; ningún otro acorde lleva `retrans`. El I propio de cada
   sección suena en `section.tonic` (`frameOf(piece, sec).pcs[root]`).
 - Sensible: en secciones de escala local menor o dórica, todo V
-  `cadential` tiene tercera mayor sobre su fundamental y toda nota de la
-  región de esa clase de grado mientras dura suena a un semitono de la
-  tónica local (100 %). Métricas: % de modulaciones preparadas (100 % en
+  `cadential` tiene tercera mayor sobre su fundamental (`chord.alters`) y
+  toda nota de la región de esa clase de grado mientras dura suena a un
+  semitono de la tónica local **si su línea sube** (la siguiente nota de la
+  pista con otra altura natural está por encima, o no hay siguiente); si
+  baja, suena natural (`Harmony.resolves`; la séptima de una dominante
+  secundaria, −1, al revés). Métricas melódicas: entre notas audibles
+  consecutivas de una pista, las sensibles (`alter > 0`) seguidas de una nota
+  más grave deben ser ≈ 0 (eran ~54 %) y las segundas aumentadas (grado
+  conjunto a 3 semitonos en la misma región) < 0.3 % de las notas. Métricas: % de modulaciones preparadas (100 % en
   escalas de 7 y en pentatónica real) y con pivote (~80–97 %; hacia el
   homónimo no hay; con retransición de una frase de 2 acordes tampoco).
 - Idempotencia: envolver `Harmony.apply` y re-ejecutarlo sobre su propia
@@ -213,7 +219,10 @@ antes del contrapunto):
 - Todo `midi` del `grid` sigue igual a `cellMidi(...)` y `alter` al de
   `alterAt` (el pase mueve grados con `Harmony.setPitch`, nunca midi directo).
 - Idempotencia: re-ejecutar `enforce` sobre una pieza ya compuesta no mueve ni
-  abre unísonos (`stats.moved + stats.unisons === 0`).
+  abre unísonos (`stats.moved + stats.unisons === 0`). `compose` ya lo
+  repasa al menos una vez tras el `spell` final (las alteraciones dependen
+  de la nota siguiente, que el propio pase pudo mover), así que la pieza
+  devuelta debe cumplirlo tal cual.
 - El pase no añade ni quita notas (mismas posiciones ocupadas del `grid`) y las
   stats devueltas acotan lo tocado (~7% movidas+fantasma sobre el total).
 

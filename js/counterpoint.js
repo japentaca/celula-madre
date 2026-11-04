@@ -162,7 +162,11 @@ const Counterpoint = (() => {
       // 2. Unísonos exactos entre ataques audibles -> octava libre más cercana.
       // Corre DESPUÉS de resolver los ataques porque una corrección de grado
       // puede caer en el midi de otra pista; el desplazamiento de octava nunca
-      // rompe consonancia (la clasificación trabaja mod octava)
+      // rompe consonancia (la clasificación trabaja mod octava) siempre que
+      // conserve la clase de altura: la alteración mira la dirección hacia la
+      // nota siguiente, y una octava arriba o abajo puede invertirla (Sol#
+      // que subía a La pasa a Sol que baja), así que solo se abre si la
+      // altura queda exactamente a una octava
       const taken = new Set();
       for (const a of attacks) {
         const cell = a.cell;
@@ -171,10 +175,10 @@ const Counterpoint = (() => {
           // La octava se escribe en grados de la escala actual: fuera de
           // [-7, 7] (invariante 3) un retune a una escala de otro largo la
           // convertiría en un salto de registro. Si no cabe, queda el unísono
-          const canUp = cell.degree + scaleLen <= 7;
-          const canDown = cell.degree - scaleLen >= -7;
           const up = Harmony.midiAt(ctx, s, cell, cell.degree + scaleLen);
           const down = Harmony.midiAt(ctx, s, cell, cell.degree - scaleLen);
+          const canUp = cell.degree + scaleLen <= 7 && up === cell.midi + 12;
+          const canDown = cell.degree - scaleLen >= -7 && down === cell.midi - 12;
           if (canUp && !taken.has(up) && up <= 96) {
             Harmony.setPitch(ctx, s, cell, cell.degree + scaleLen);
             stats.unisons++;

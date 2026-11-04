@@ -5,11 +5,13 @@ const Humanizer = (() => {
   // Toda nota que se añade o altera recibe su altura con Harmony.setPitch:
   // grado, alteración del acorde vigente (cell.alter) y midi derivado de
   // ambos con la región y el registro de la nota (keyOffset, mode, octave) —
-  // retune-safe
-  function newNote(ctx, s, anchor, degree, velocity, sustain) {
+  // retune-safe. Se coloca en la rejilla antes de afinarla: la alteración
+  // mira la nota siguiente de su pista
+  function newNote(ctx, row, s, anchor, degree, velocity, sustain) {
     const cell = { midi: 0, degree, keyOffset: anchor.keyOffset, velocity, sustain, motifIndex: anchor.motifIndex };
     if (anchor.mode) cell.mode = anchor.mode;
     if (anchor.octave) cell.octave = anchor.octave;
+    row[s] = cell;
     Harmony.setPitch(ctx, s, cell, degree);
     return cell;
   }
@@ -40,7 +42,7 @@ const Humanizer = (() => {
             let dir = Math.random() < 0.5 ? -1 : 1;
             if (Math.abs(cell.degree + dir) > 7) dir = -dir;
             const degree = cell.degree + dir;
-            row[s - 1] = newNote(ctx, s - 1, cell, degree, Math.max(0.05, cell.velocity * 0.5), 0.3);
+            newNote(ctx, row, s - 1, cell, degree, Math.max(0.05, cell.velocity * 0.5), 0.3);
           }
         }
       }
@@ -66,7 +68,7 @@ const Humanizer = (() => {
               Math.random() < 0.6 * INTENSITY) {
             const degree = a.degree + Math.round(jump / 2);
             const at = prev + (gap >> 1);
-            row[at] = newNote(ctx, at, a, degree, Math.max(0.05, Math.min(a.velocity, b.velocity) * 0.7), 0.6);
+            newNote(ctx, row, at, a, degree, Math.max(0.05, Math.min(a.velocity, b.velocity) * 0.7), 0.6);
           }
         }
         prev = s;

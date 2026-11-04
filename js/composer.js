@@ -8,6 +8,10 @@ const Composer = (() => {
   // Coda tras el último paso: las notas finales (`cell.final`, Humanizer)
   // se alargan esto y las pistas se desvanecen en ese tiempo
   const ENDING_TAIL_STEPS = 16;
+  // Pasadas extra de contrapunto al cerrar los pases: cada una sobre
+  // alteraciones recién coherentes (Harmony.spell); la primera siempre y las
+  // demás solo si la anterior cambió alguna altura. En la práctica basta una
+  const SPELL_PASSES = 4;
   // Repeticiones totales de célula por sección (potencias de 2) cuando no hay
   // plan de duración (planDuration)
   const SECTION_REPEAT_CHOICES = [2, 4];
@@ -558,6 +562,20 @@ const Composer = (() => {
     // vigilar también las notas que la humanización añade, y antes de las
     // duraciones, porque ajusta sustains
     Counterpoint.enforce(ctx);
+
+    // Las alteraciones miran la nota siguiente de su pista, y los pases
+    // quitan, añaden y mueven notas: un spell las deja coherentes con la
+    // rejilla definitiva y el contrapunto vuelve a pasar sobre ella
+    // (determinista: solo toca lo que quedó desfasado, p. ej. un unísono que
+    // no abrió porque su nota siguiente aún iba a moverse). Mientras ese
+    // repaso cambie alguna altura se repite, hasta SPELL_PASSES, y se cierra
+    // siempre con spell para que `alter` quede coherente (retune depende de
+    // ello)
+    let stale = Harmony.spell(ctx);
+    for (let pass = 0; pass < SPELL_PASSES && (stale || pass === 0); pass++) {
+      Counterpoint.enforce(ctx);
+      stale = Harmony.spell(ctx);
+    }
 
     // Duraciones: cada nota sostiene una fracción (sustain) del hueco hasta la
     // siguiente nota de su pista — legato como máximo, nunca superposición
