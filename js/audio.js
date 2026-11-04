@@ -45,6 +45,12 @@ const AudioEngine = (() => {
   // de ~0.13; sin esto hay hasta 16 dB de diferencia entre presets
   const PRESET_TRIMS = { Synth: -3, FMSynth: 7, AMSynth: 13, MonoSynth: 0, SynthPair: -1.5 };
 
+  // Presets ricos en armónicos para la pista grave (Composer.trackRegisters
+  // −1): una senoidal en Do2 apenas suena en altavoces normales, mientras que
+  // la sierra filtrada y la FM se oyen por sus armónicos aunque falte la
+  // fundamental. App solo los impone cuando el preset de la pista es aleatorio
+  const BASS_PRESETS = ['MonoSynth', 'FMSynth'];
+
   // Catálogo de efectos de inserción por pista (cadena sinte→fx→panner).
   // Los nombres deben coincidir con FX_SCHEMAS de syntheditor.js
   const EFFECTS = {
@@ -384,6 +390,7 @@ const AudioEngine = (() => {
     playNote,
     dispose,
     PRESETS: Object.keys(PRESETS),
+    BASS_PRESETS,
     DELAY_SUBDIVISIONS,
     DEFAULT_DELAY_SUBDIVISION,
     DEFAULT_DELAY_FEEDBACK,

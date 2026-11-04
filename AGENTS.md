@@ -133,7 +133,7 @@ plan armónico (`Harmony.plan` + `Harmony.spell`) → `Humanizer` → `Energy` �
   recibe valores concretos, y elegir «Aleatoria» no re-afina la pieza en curso.
 - **Pieza** (`Composer.compose`): `{ sections, totalSteps, grid, stepEvents,
   blockMarkers, numTracks, cellLength, scale, key, modulation, harmony, form,
-  contour }`. `grid[pista][paso]` (celda `{ midi, degree, keyOffset, mode?,
+  trackRegisters, contour }`. `grid[pista][paso]` (celda `{ midi, degree, keyOffset, mode?,
   octave?, alter?, velocity, sustain, motifIndex, durationSteps, final? }` o `null`)
   para el visualizador;
   `stepEvents[paso]` para el transporte: lista de `{ trackIndex, cell }` donde
@@ -239,16 +239,27 @@ plan armónico (`Harmony.plan` + `Harmony.spell`) → `Humanizer` → `Energy` �
   tónica local en el ciclo de quintas, con signo: lo que dibuja la vista
   «fifths»; La menor desde Do = +3). Además `arrival` (`'dominant'`,
   `'subdominant'`, `'relative'`, `'parallel'` o null): cómo se llega a ella.
-  Cada nota del `grid` copia `keyOffset`, `mode` y `octave` de su sección.
-  **Registro** (`section.octave`, octavas enteras, `planRegister`): el
+  Cada nota del `grid` copia `keyOffset` y `mode` de su sección; su `octave`
+  es la de la sección más el registro de su pista.
+  **Registro de pista** (`piece.trackRegisters`, octavas, `planTrackRegisters`):
+  sorteado por pieza, una pista grave (−1) desde 2 pistas y una aguda (+1)
+  desde 3; el resto 0. Sin él todas las pistas compartían las mismas dos
+  octavas (Fa3–La5). `App` compone antes de configurar el audio para que la
+  pista grave, si su preset es aleatorio, tome uno de
+  `AudioEngine.BASS_PRESETS` (ricos en armónicos: una senoidal en Do2 no se
+  oye) y quede al centro del paneo (`spreadPan`, salvo paneo tocado a mano);
+  la tira de la pista lo marca con ▾/▴.
+  **Registro de sección** (`section.octave`, octavas enteras, `planRegister`): el
   transporte efectivo T = `shift` (solo con modulación real) + 12·`octave` se
   elige por programación dinámica sobre la pieza entera entre las octavas
   que dejan T a ≤ `REGISTER_WINDOW` (8) semitonos de 12·`character.register`
-  y con |T| ≤ 17 — y, antes que eso, que dejan la sección audible: el
-  percentil 10 de sus notas (con la tonalidad real) ≥ `REGISTER_FLOOR` (48,
-  Do3) y el 90 ≤ `REGISTER_CEIL` (93); sin ese suelo, sombrío + transporte
+  y con |T| ≤ 17 — y, antes que eso, que dejan audible cada pista: el
+  percentil 10 de sus notas (con la tonalidad real y su registro de pista)
+  ≥ el suelo de su papel y el 90 ≤ su techo (`TRACK_REGISTERS`: grave
+  36–84, media 48–93, aguda 55–100); sin ese suelo, sombrío + transporte
   de la modulación + tónica grave hundían frases enteras bajo Do2 —, minimizando el salto de altura media entre secciones
-  consecutivas (contenido de la letra, en la escala local, + T, descontado el
+  consecutivas (contenido de la letra, en la escala local y sin registro de
+  pista, + T, descontado el
   cambio deliberado de registro entre caracteres) más `REGISTER_PULL` (0.5) ×
   la distancia al registro del carácter. Así una modulación real no arrastra
   la melodía de golpe y la vuelta de A cae en su registro. Se fija al

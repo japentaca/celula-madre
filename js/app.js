@@ -309,10 +309,14 @@ const App = (() => {
   }
 
   // Reparte las pistas por el espectro estéreo: T1 a la izquierda, la última a la derecha
-  function spreadPan(trackIndex, numTracks) {
-    if (numTracks <= 1) return 0;
+  // Reparto estéreo estándar: la pista grave (registro −1 de la pieza) al
+  // centro y las demás abiertas de izquierda a derecha en orden de pista
+  function spreadPan(trackIndex, registers) {
+    if (registers[trackIndex] < 0) return 0;
+    const others = registers.map((r, t) => t).filter(t => registers[t] >= 0);
+    if (others.length <= 1) return 0;
     const maxSpread = 0.85;
-    return -maxSpread + (2 * maxSpread * trackIndex) / (numTracks - 1);
+    return -maxSpread + (2 * maxSpread * others.indexOf(trackIndex)) / (others.length - 1);
   }
 
   // Parámetros que pueden sortearse en cada generación dentro de un rango
@@ -563,12 +567,22 @@ const App = (() => {
 
   // Prioridad: elección por pista > preset global del topbar > aleatorio.
   // El sinte sorteado se conserva entre regeneraciones; solo se re-sortea si el
-  // usuario vuelve a elegir "Aleatorio" en el panel
+  // usuario vuelve a elegir "Aleatorio" en el panel, o si a la pista le toca
+  // el registro grave y lo sorteado no es de AudioEngine.BASS_PRESETS
   function resolvePreset(trackIndex, ui) {
     const settings = state.trackSettings[trackIndex];
     if (settings.preset !== 'random') return settings.preset;
     if (ui.preset !== 'random') return ui.preset;
-    return state.resolvedPresets[trackIndex] || Generator.pickRandom(AudioEngine.PRESETS);
+    const kept = state.resolvedPresets[trackIndex];
+    if (isBassTrack(trackIndex)) {
+      return AudioEngine.BASS_PRESETS.includes(kept) ? kept : Generator.pickRandom(AudioEngine.BASS_PRESETS);
+    }
+    return kept || Generator.pickRandom(AudioEngine.PRESETS);
+  }
+
+  function isBassTrack(trackIndex) {
+    const regs = state.piece && state.piece.trackRegisters;
+    return !!regs && regs[trackIndex] < 0;
   }
 
   // Forma que entiende AudioEngine: definición editada > preset de usuario > nombre de fábrica
@@ -616,20 +630,8 @@ const App = (() => {
     // al menos tantas variaciones como pistas para que nunca falte material distinto
     const motifs = Generator.generateMotifs(motherCell, Math.max(4, numTracks), ui.contours);
 
-    const configs = [];
-    const resolved = [];
-    for (let t = 0; t < numTracks; t++) {
-      const preset = resolvePreset(t, ui);
-      const settings = state.trackSettings[t];
-      // el reparto estéreo se recalcula salvo que el usuario haya movido el paneo a mano
-      if (!settings.panTouched) settings.pan = spreadPan(t, numTracks);
-      resolved.push(preset);
-      configs.push({ preset: toEnginePreset(t, preset), volume: settings.volume, reverb: settings.reverb, delay: settings.delay, pan: settings.pan });
-    }
-    state.resolvedPresets = resolved;
-    AudioEngine.setupTracks(configs);
-    MidiEngine.setTrackChannels(state.trackSettings.slice(0, numTracks).map(s => s.midiChannel));
-
+    // Se compone antes de configurar el audio: el registro de cada pista
+    // (piece.trackRegisters) decide el sinte aleatorio de la grave y su paneo
     state.piece = Composer.compose({
       numTracks,
       motifs,
@@ -640,6 +642,20 @@ const App = (() => {
       repeatsByLetter: plan.repeats,
       modulation: Generator.resolveModulation(ui.modulation)
     });
+    const configs = [];
+    const resolved = [];
+    for (let t = 0; t < numTracks; t++) {
+      const preset = resolvePreset(t, ui);
+      const settings = state.trackSettings[t];
+      // el reparto estéreo se recalcula salvo que el usuario haya movido el paneo a mano
+      if (!settings.panTouched) settings.pan = spreadPan(t, state.piece.trackRegisters);
+      resolved.push(preset);
+      configs.push({ preset: toEnginePreset(t, preset), volume: settings.volume, reverb: settings.reverb, delay: settings.delay, pan: settings.pan });
+    }
+    state.resolvedPresets = resolved;
+    AudioEngine.setupTracks(configs);
+    MidiEngine.setTrackChannels(state.trackSettings.slice(0, numTracks).map(s => s.midiChannel));
+
     updateRandomTonalityLabels();
     // El cursor de una pausa previa no vale para la pieza nueva (compose
     // rebobina a 0); si no, vizRefresh (retune, resize, vista) lo repondría
@@ -684,6 +700,20 @@ const App = (() => {
     return resolved ? `${displayName(resolved)} · azar` : 'Aleatorio';
   }
 
+  // Registro propio de la pista en la pieza (Composer: −1 grave, +1 aguda)
+  function trackRegister(t) {
+    const regs = state.piece && state.piece.trackRegisters;
+    return regs ? regs[t] || 0 : 0;
+  }
+  function registerMark(t) {
+    const r = trackRegister(t);
+    return r ? `<span class="strip-reg">${r < 0 ? '▾' : '▴'}</span>` : '';
+  }
+  function registerTitle(t) {
+    const r = trackRegister(t);
+    return r ? ` title="${r < 0 ? 'Pista grave: una octava abajo' : 'Pista aguda: una octava arriba'}"` : '';
+  }
+
   function buildTrackPanel(numTracks) {
     const panel = document.getElementById('track-panel');
     if (!panel) return;
@@ -704,7 +734,7 @@ const App = (() => {
       html += `
         <div class="track-strip" data-track="${t}">
           <div class="strip-row">
-            <span class="strip-num">${String(t + 1).padStart(2, '0')}</span>
+            <span class="strip-num"${registerTitle(t)}>${String(t + 1).padStart(2, '0')}${registerMark(t)}</span>
             <select class="strip-preset" title="Instrumento de la pista">${options}</select>
             <button class="strip-edit" title="Editor de sinte y efectos" aria-label="Editar sinte de la pista ${t + 1}">
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.3 1.9l2.8 2.8-8.6 8.6H2.7v-2.8z"/></svg>
@@ -732,7 +762,7 @@ const App = (() => {
         // elegir un preset descarta la edición en vivo del editor de sintes
         settings.edited = null;
         const resolved = settings.preset === 'random'
-          ? Generator.pickRandom(AudioEngine.PRESETS)
+          ? Generator.pickRandom(isBassTrack(t) ? AudioEngine.BASS_PRESETS : AudioEngine.PRESETS)
           : settings.preset;
         state.resolvedPresets[t] = resolved;
         presetSelect.querySelector('option[value="random"]').textContent = randomOptionLabel(t);

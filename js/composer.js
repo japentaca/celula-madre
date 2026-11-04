@@ -353,26 +353,55 @@ const Composer = (() => {
   // melodía de un tirón de 7 semitonos y la vuelta de A, en la tónica, cae
   // siempre en su registro de exposición. Se fija al componer: retune
   // conserva las octavas (re-describe shift, así que ida y vuelta es exacta).
-  // Límites audibles: el percentil REGISTER_LOW_Q de las notas de la sección
-  // (con la tonalidad real) no baja de REGISTER_FLOOR ni el REGISTER_HIGH_Q
-  // pasa de REGISTER_CEIL. Sin ellos, carácter sombrío (−1 octava) + transporte
-  // de la modulación real (hasta −6) + tónica grave dejaban frases enteras por
-  // debajo de Do2, inaudibles con un sinte senoidal en altavoces normales
+  // Límites audibles, pista por pista: el percentil REGISTER_LOW_Q de las
+  // notas de cada pista (con la tonalidad real y su registro propio) no baja
+  // del suelo de su papel ni el REGISTER_HIGH_Q pasa de su techo. Sin ellos,
+  // carácter sombrío (−1 octava) + transporte de la modulación real (hasta −6)
+  // + tónica grave dejaban frases enteras por debajo de Do2, inaudibles con un
+  // sinte senoidal en altavoces normales
   const REGISTER_WINDOW = 8;
   const REGISTER_MAX = 17;
   const REGISTER_PULL = 0.5;
-  const REGISTER_FLOOR = 48;
-  const REGISTER_CEIL = 93;
   const REGISTER_LOW_Q = 0.1;
   const REGISTER_HIGH_Q = 0.9;
-  function planRegister(sections, motifs, scale, key, modulation) {
+
+  // Registro propio de cada pista (octavas que se suman a las de la sección):
+  // sin él todas las pistas comparten las mismas dos octavas (grados en
+  // [-7, 7] alrededor de Do4) y la pieza entera vive entre Fa3 y La5. Se
+  // sortea por pieza: una pista grave (−1) desde 2 pistas y una aguda (+1)
+  // desde 3; las demás en el medio. La grave puede bajar hasta Do2 porque
+  // App le da un sinte rico en armónicos si su preset es aleatorio
+  // (AudioEngine.BASS_PRESETS); la aguda sube hasta Mi7
+  const TRACK_REGISTERS = {
+    '-1': { floor: 36, ceil: 84 },
+    '0': { floor: 48, ceil: 93 },
+    '1': { floor: 55, ceil: 100 }
+  };
+  function planTrackRegisters(numTracks) {
+    const order = Array.from({ length: numTracks }, (_, t) => t);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const regs = new Array(numTracks).fill(0);
+    if (numTracks >= 2) regs[order[0]] = -1;
+    if (numTracks >= 3) regs[order[1]] = 1;
+    return regs;
+  }
+
+  function planRegister(sections, motifs, scale, key, modulation, trackRegisters) {
+    const q = (notes, f) => notes[Math.min(notes.length - 1, Math.floor(f * notes.length))];
+    // mean: altura media de la letra sin el registro de pista (para que la
+    // continuidad no dependa de qué pistas tocan); tracks: cuantiles por pista
+    // con su registro propio, para el suelo y el techo
     const stats = sections.map(section => {
       const local = modulation === 'real' ? section.localScale : scale;
-      const notes = [];
       let sum = 0;
       let count = 0;
-      section.trackBlocks.forEach(blocks => {
+      const tracks = [];
+      section.trackBlocks.forEach((blocks, t) => {
         if (!blocks) return;
+        const notes = [];
         for (const block of blocks) {
           if (block.motifIndex === null) continue;
           for (const step of motifs[block.motifIndex]) {
@@ -380,23 +409,26 @@ const Composer = (() => {
             const midi = Generator.degreeToMidi(step.degree, local, key);
             sum += (midi - key - 60) * block.repeats;
             count += block.repeats;
-            notes.push(midi);
+            notes.push(midi + 12 * trackRegisters[t]);
           }
         }
+        if (!notes.length) return;
+        notes.sort((a, b) => a - b);
+        tracks.push({ ...TRACK_REGISTERS[trackRegisters[t]], low: q(notes, REGISTER_LOW_Q), high: q(notes, REGISTER_HIGH_Q) });
       });
-      notes.sort((a, b) => a - b);
-      const q = f => (notes.length ? notes[Math.min(notes.length - 1, Math.floor(f * notes.length))] : 60 + key);
-      return { mean: count ? sum / count : 0, low: q(REGISTER_LOW_Q), high: q(REGISTER_HIGH_Q) };
+      return { mean: count ? sum / count : 0, tracks };
     });
     const content = stats.map(st => st.mean);
     const options = sections.map((section, i) => {
       const shift = modulation === 'real' ? section.shift : 0;
       const target = 12 * section.character.register;
-      const { low, high } = stats[i];
+      const { tracks } = stats[i];
       const range = [-2, -1, 0, 1, 2].map(k => ({ k, T: shift + 12 * k })).filter(o => Math.abs(o.T) <= REGISTER_MAX);
-      const audible = range.filter(o => low + o.T >= REGISTER_FLOOR && high + o.T <= REGISTER_CEIL);
-      // Si ninguna octava cabe entera, la que menos se sale por abajo o por arriba
-      const overflow = o => Math.max(0, REGISTER_FLOOR - low - o.T) + Math.max(0, high + o.T - REGISTER_CEIL);
+      // Lo que se salen las pistas por abajo o por arriba con el transporte T;
+      // si ninguna octava las deja a todas dentro, la que menos se sale
+      const overflow = o => tracks.reduce((acc, tr) =>
+        acc + Math.max(0, tr.floor - tr.low - o.T) + Math.max(0, tr.high + o.T - tr.ceil), 0);
+      const audible = range.filter(o => overflow(o) === 0);
       const all = audible.length ? audible : [range.reduce((a, b) => (overflow(b) < overflow(a) ? b : a))];
       const near = all.filter(o => Math.abs(o.T - target) <= REGISTER_WINDOW);
       return near.length ? near : [all.reduce((a, b) => (Math.abs(b.T - target) < Math.abs(a.T - target) ? b : a))];
@@ -492,7 +524,8 @@ const Composer = (() => {
     // (keyOffset y mode), lo que hace retune-safe la modulación
     planTonality(sections, scale, modulation, form);
     // Registro por sección (octava del transporte) según carácter y continuidad
-    planRegister(sections, motifs, scale, key, modulation);
+    const trackRegisters = planTrackRegisters(numTracks);
+    planRegister(sections, motifs, scale, key, modulation, trackRegisters);
     for (const section of sections) {
       for (let t = 0; t < numTracks; t++) {
         const blocks = section.trackBlocks[t];
@@ -506,7 +539,7 @@ const Composer = (() => {
               const step = motif[s % motif.length];
               if (!step.note) continue;
               const cell = {
-                midi: Generator.cellMidi(step.degree, scale, key, section, modulation),
+                midi: null,
                 degree: step.degree,
                 keyOffset: section.keyOffset,
                 velocity: step.velocity,
@@ -514,7 +547,9 @@ const Composer = (() => {
                 motifIndex: block.motifIndex
               };
               if (section.mode) cell.mode = section.mode;
-              if (section.octave) cell.octave = section.octave;
+              const octave = (section.octave || 0) + trackRegisters[t];
+              if (octave) cell.octave = octave;
+              cell.midi = Generator.cellMidi(step.degree, scale, key, cell, modulation);
               grid[t][blockPos + s] = cell;
             }
             blockMarkers.push({
@@ -594,7 +629,7 @@ const Composer = (() => {
       }
     }
 
-    piece = { sections, totalSteps, grid, stepEvents, blockMarkers, numTracks, cellLength, scale, key, modulation, harmony, form };
+    piece = { sections, totalSteps, grid, stepEvents, blockMarkers, numTracks, cellLength, scale, key, modulation, harmony, form, trackRegisters };
     // Una pieza nueva invalida cualquier pausa pendiente de la anterior
     currentStep = 0;
     return piece;

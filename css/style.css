@@ -1030,6 +1030,7 @@ input[type="checkbox"].rand-toggle:checked::before {
 }
 
 .strip-num {
+  position: relative;
   flex: 0 0 auto;
   width: 18px;
   font-family: var(--mono);
@@ -1038,6 +1039,14 @@ input[type="checkbox"].rand-toggle:checked::before {
 }
 
 .track-strip:hover .strip-num {
+  color: var(--muted);
+}
+
+.strip-reg {
+  position: absolute;
+  right: -4px;
+  top: -1px;
+  font-size: 8px;
   color: var(--muted);
 }
 
