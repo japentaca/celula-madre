@@ -596,7 +596,7 @@ const App = (() => {
   function displayName(name) {
     return name.startsWith(SynthEditor.USER_PREFIX)
       ? `★ ${name.slice(SynthEditor.USER_PREFIX.length)}`
-      : name;
+      : AudioEngine.presetLabel(name);
   }
 
   function currentNumTracks() {
@@ -768,7 +768,7 @@ const App = (() => {
         presetSelect.querySelector('option[value="random"]').textContent = randomOptionLabel(t);
         // definición completa: cambiar de preset también reemplaza la cadena de efectos
         const def = resolved.startsWith(SynthEditor.USER_PREFIX) ? SynthEditor.getUserPreset(resolved) : null;
-        AudioEngine.setTrackPreset(t, def || { base: resolved, chain: [] });
+        AudioEngine.setTrackPreset(t, def || AudioEngine.presetDef(resolved));
         SynthEditor.refreshIfOpen(t, resolved);
       });
 

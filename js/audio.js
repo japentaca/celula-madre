@@ -37,19 +37,81 @@ const AudioEngine = (() => {
     FMSynth: () => new Tone.FMSynth({ harmonicity: 2, modulationIndex: 2, envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 }, modulationEnvelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 } }),
     AMSynth: () => new Tone.AMSynth({ harmonicity: 2, oscillator: { type: 'sine' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 }, modulation: { type: 'square' }, modulationEnvelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 } }),
     MonoSynth: () => new Tone.MonoSynth({ filterEnvelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 }, oscillator: { type: 'sawtooth' } }),
-    SynthPair: () => new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'triangle' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 } })
+    SynthPair: () => new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'triangle' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 } }),
+    // Cuerda pulsada (Karplus-Strong): ignora la velocity
+    PluckSynth: () => new Tone.PluckSynth({ attackNoise: 1, dampening: 4000, resonance: 0.9, release: 1 }),
+    // Membrana afinada: caída de altura al atacar, entre tom y kalimba
+    MembraneSynth: () => new Tone.MembraneSynth({ pitchDecay: 0.03, octaves: 2, oscillator: { type: 'triangle' }, envelope: { attack: 0.002, decay: 0.5, sustain: 0.05, release: 0.8 } }),
+    // Dos voces de sierra filtradas, casi al unísono y con vibrato: lead grueso
+    DuoSynth: () => new Tone.DuoSynth({
+      harmonicity: 1.005, vibratoAmount: 0.15, vibratoRate: 5,
+      voice0: { oscillator: { type: 'sawtooth' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.3 }, filterEnvelope: { attack: 0.01, decay: 0.3, sustain: 0.4, release: 0.3, baseFrequency: 300, octaves: 3 } },
+      voice1: { oscillator: { type: 'sawtooth' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.3 }, filterEnvelope: { attack: 0.01, decay: 0.3, sustain: 0.4, release: 0.3, baseFrequency: 300, octaves: 3 } }
+    })
+  };
+
+  // Voces de fábrica con carácter: un motor de PRESETS con parámetros y cadena
+  // de inserción, en el mismo formato { base, params, chain } que los presets
+  // de usuario. params.volume hace de compensación de sonoridad (como
+  // PRESET_TRIMS) y se mide igual
+  const VOICES = {
+    EPiano: { label: 'Piano eléctrico', base: 'FMSynth',
+      params: { volume: 14, harmonicity: 1, modulationIndex: 7, oscillator: { type: 'sine' }, modulation: { type: 'sine' },
+        envelope: { attack: 0.003, decay: 1.6, sustain: 0.15, release: 0.9 },
+        modulationEnvelope: { attack: 0.002, decay: 0.35, sustain: 0.05, release: 0.4 } },
+      chain: [{ type: 'Tremolo', params: { frequency: 3.5, depth: 0.3, wet: 1 } }] },
+    Bell: { label: 'Campana', base: 'FMSynth',
+      params: { volume: 9, harmonicity: 3.5, modulationIndex: 12, oscillator: { type: 'sine' }, modulation: { type: 'sine' },
+        envelope: { attack: 0.002, decay: 2.5, sustain: 0, release: 2.5 },
+        modulationEnvelope: { attack: 0.002, decay: 1.2, sustain: 0, release: 1 } },
+      chain: [] },
+    Marimba: { label: 'Marimba', base: 'FMSynth',
+      params: { volume: 11, harmonicity: 4, modulationIndex: 3, oscillator: { type: 'sine' }, modulation: { type: 'sine' },
+        envelope: { attack: 0.002, decay: 0.5, sustain: 0, release: 0.4 },
+        modulationEnvelope: { attack: 0.002, decay: 0.08, sustain: 0, release: 0.1 } },
+      chain: [] },
+    Organ: { label: 'Órgano', base: 'FMSynth',
+      params: { volume: 3, harmonicity: 2, modulationIndex: 1.2, oscillator: { type: 'sine' }, modulation: { type: 'sine' },
+        envelope: { attack: 0.01, decay: 0.05, sustain: 0.9, release: 0.15 },
+        modulationEnvelope: { attack: 0.01, decay: 0.1, sustain: 1, release: 0.15 } },
+      chain: [{ type: 'Chorus', params: { frequency: 5, delayTime: 2.5, depth: 0.4, wet: 0.4 } }] },
+    Pad: { label: 'Pad etéreo', base: 'SynthPair',
+      params: { volume: -4.5, oscillator: { type: 'triangle' },
+        envelope: { attack: 0.06, decay: 0.4, sustain: 0.7, release: 2.5 } },
+      chain: [
+        { type: 'AutoFilter', params: { frequency: 0.15, baseFrequency: 300, octaves: 3, depth: 0.6, wet: 1 } },
+        { type: 'Chorus', params: { frequency: 0.8, delayTime: 4, depth: 0.6, wet: 0.5 } }
+      ] },
+    Supersaw: { label: 'Supersaw', base: 'Synth',
+      params: { volume: 2, oscillator: { type: 'fatsawtooth' },
+        envelope: { attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.4 } },
+      chain: [{ type: 'Filter', params: { type: 'lowpass', frequency: 2500, Q: 0.7 } }] }
   };
 
   // Compensación de sonoridad por preset (dB sobre synth.volume), medida por RMS
   // con render offline (notas C3/C4/C5, velocity 0.7) hacia un objetivo común
-  // de ~0.13; sin esto hay hasta 16 dB de diferencia entre presets
-  const PRESET_TRIMS = { Synth: -3, FMSynth: 7, AMSynth: 13, MonoSynth: 0, SynthPair: -1.5 };
+  // de ~0.13; sin esto hay hasta 16 dB de diferencia entre presets. En los
+  // percusivos (pulsada, membrana, campana, marimba) el RMS medio subestima lo
+  // que se oye y su trim se recorta para que el pico no pase de ~0.8 (MonoSynth)
+  const PRESET_TRIMS = { Synth: -3, FMSynth: 7, AMSynth: 13, MonoSynth: 0, SynthPair: -1.5, PluckSynth: 5, MembraneSynth: 3, DuoSynth: -5 };
 
   // Presets ricos en armónicos para la pista grave (Composer.trackRegisters
   // −1): una senoidal en Do2 apenas suena en altavoces normales, mientras que
   // la sierra filtrada y la FM se oyen por sus armónicos aunque falte la
   // fundamental. App solo los impone cuando el preset de la pista es aleatorio
-  const BASS_PRESETS = ['MonoSynth', 'FMSynth'];
+  const BASS_PRESETS = ['MonoSynth', 'FMSynth', 'DuoSynth'];
+
+  // Definición { base, params, chain } de un nombre de fábrica (motor o voz),
+  // copia nueva en cada llamada para que el editor pueda modificarla
+  function presetDef(name) {
+    const voice = VOICES[name];
+    if (voice) return JSON.parse(JSON.stringify({ base: voice.base, params: voice.params, chain: voice.chain }));
+    return { base: PRESETS[name] ? name : 'Synth', params: null, chain: [] };
+  }
+
+  function presetLabel(name) {
+    return VOICES[name] ? VOICES[name].label : name;
+  }
 
   // Catálogo de efectos de inserción por pista (cadena sinte→fx→panner).
   // Los nombres deben coincidir con FX_SCHEMAS de syntheditor.js
@@ -74,8 +136,9 @@ const AudioEngine = (() => {
   }
 
   function buildChain(preset) {
-    if (typeof preset !== 'object' || !preset.chain) return [];
-    return preset.chain.map(makeEffect).filter(Boolean);
+    const def = typeof preset === 'string' ? presetDef(preset) : preset;
+    if (!def || !def.chain) return [];
+    return def.chain.map(makeEffect).filter(Boolean);
   }
 
   function ensureGraph() {
@@ -112,7 +175,7 @@ const AudioEngine = (() => {
   // preset: nombre de fábrica o definición { base, params, chain } (preset de
   // usuario o edición en vivo del editor de sintes)
   function makeSynth(preset) {
-    const def = typeof preset === 'string' ? { base: preset } : preset;
+    const def = typeof preset === 'string' ? presetDef(preset) : preset;
     const factory = PRESETS[def.base] || PRESETS.Synth;
     const synth = factory();
     const params = def.params ? { ...def.params } : null;
@@ -389,8 +452,12 @@ const AudioEngine = (() => {
     setEnabled,
     playNote,
     dispose,
-    PRESETS: Object.keys(PRESETS),
+    // Motores (el «Sinte» del editor) y todo lo elegible por nombre (motores + voces)
+    SYNTH_TYPES: Object.keys(PRESETS),
+    PRESETS: Object.keys(PRESETS).concat(Object.keys(VOICES)),
     BASS_PRESETS,
+    presetDef,
+    presetLabel,
     DELAY_SUBDIVISIONS,
     DEFAULT_DELAY_SUBDIVISION,
     DEFAULT_DELAY_FEEDBACK,

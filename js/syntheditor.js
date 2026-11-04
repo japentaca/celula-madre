@@ -68,6 +68,41 @@ const SynthEditor = (() => {
       { section: 'Oscilador', rows: [oscRow, detuneRow] },
       { section: 'Envolvente', rows: envRows('envelope') },
       { section: 'Salida', rows: [volumeRow] }
+    ],
+    PluckSynth: [
+      { section: 'Cuerda', rows: [
+        { path: 'attackNoise', label: 'Ruido ataque', min: 0.1, max: 20, scale: 'log' },
+        { path: 'dampening', label: 'Brillo', min: 500, max: 8000, scale: 'log', unit: 'Hz' },
+        { path: 'resonance', label: 'Resonancia', min: 0.5, max: 0.99 },
+        { path: 'release', label: 'Release', min: 0.05, max: 4, scale: 'log', unit: 's' }
+      ] },
+      { section: 'Salida', rows: [volumeRow] }
+    ],
+    MembraneSynth: [
+      { section: 'Membrana', rows: [
+        oscRow,
+        { path: 'pitchDecay', label: 'Caída altura', min: 0.001, max: 0.5, scale: 'log', unit: 's' },
+        { path: 'octaves', label: 'Octavas', min: 0.5, max: 8 }
+      ] },
+      { section: 'Envolvente', rows: envRows('envelope') },
+      { section: 'Salida', rows: [volumeRow] }
+    ],
+    DuoSynth: [
+      { section: 'Voces', rows: [
+        { path: 'voice0.oscillator.type', label: 'Onda 1', options: OSC_TYPES },
+        { path: 'voice1.oscillator.type', label: 'Onda 2', options: OSC_TYPES },
+        { path: 'harmonicity', label: 'Harmonic', min: 0.5, max: 4, scale: 'log' },
+        { path: 'vibratoAmount', label: 'Vibrato', min: 0, max: 1 },
+        { path: 'vibratoRate', label: 'Veloc vib', min: 0.5, max: 12, scale: 'log', unit: 'Hz' },
+        portamentoRow
+      ] },
+      { section: 'Envolvente voz 1', rows: envRows('voice0.envelope') },
+      { section: 'Envolvente voz 2', rows: envRows('voice1.envelope') },
+      { section: 'Filtro', rows: [
+        { path: 'voice0.filterEnvelope.baseFrequency', label: 'Frec base 1', min: 20, max: 10000, scale: 'log', unit: 'Hz' },
+        { path: 'voice1.filterEnvelope.baseFrequency', label: 'Frec base 2', min: 20, max: 10000, scale: 'log', unit: 'Hz' }
+      ] },
+      { section: 'Salida', rows: [volumeRow] }
     ]
   };
 
@@ -280,7 +315,7 @@ const SynthEditor = (() => {
     baseLabel.textContent = 'Sinte';
     baseRow.appendChild(baseLabel);
     const baseSelect = document.createElement('select');
-    for (const name of AudioEngine.PRESETS) {
+    for (const name of AudioEngine.SYNTH_TYPES) {
       const o = document.createElement('option');
       o.value = name;
       o.textContent = name;
@@ -509,8 +544,9 @@ const SynthEditor = (() => {
   function defFromName(name) {
     const userPreset = name.startsWith(USER_PREFIX) ? getUserPreset(name) : null;
     if (userPreset) return userPreset;
-    const base = AudioEngine.PRESETS.includes(name) ? name : 'Synth';
-    return { base, params: {}, chain: [] };
+    // motor o voz de fábrica (la voz trae sus parámetros y su cadena)
+    const def = AudioEngine.presetDef(name);
+    return { base: def.base, params: def.params || {}, chain: def.chain };
   }
 
   // resolvedName: nombre efectivo de la pista ('FMSynth' o 'user:Nombre');
