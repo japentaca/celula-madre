@@ -24,6 +24,11 @@
   --accent-line: rgba(255, 181, 71, 0.45);
   --live: #ff5a4e;
 
+  /* Vúmetros de la consola: verde, amarillo y rojo de saturación */
+  --meter-low: #4fbf6a;
+  --meter-mid: #e3c444;
+  --meter-clip: #f0473c;
+
   --radius: 6px;
   --radius-sm: 4px;
 
@@ -930,7 +935,9 @@ input[type="checkbox"].rand-toggle:checked::before {
 
 /* Vista 3D: ocupa el hueco del piano roll; solo uno de los dos es visible */
 #grid-container.hidden,
-#viz3d-container.hidden {
+#viz3d-container.hidden,
+#mixer-container.hidden,
+#track-panel.hidden {
   display: none;
 }
 
@@ -1168,6 +1175,629 @@ input[type="checkbox"].rand-toggle:checked::before {
     height: 14px;
     margin-top: -5.5px;
   }
+}
+
+/* ==== Botón «Consola» del topbar: conmutador (aria-pressed) ==== */
+
+.view-btn {
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.view-btn:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.view-btn[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+/* ==== Consola mezcladora: canales con scroll horizontal a la izquierda y
+   retornos + master en un bloque fijo a la derecha; el hueco sobrante queda
+   entre ambos. La parte de arriba de cada strip tiene alto fijo para que los
+   faders queden alineados ==== */
+
+#mixer-container {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  background: var(--bg-viz);
+  overflow-y: auto;
+  --mx-top: 330px;
+}
+
+.mx-channels {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.mx-master-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  border-left: 1px solid var(--line-strong);
+  box-shadow: -8px 0 16px rgba(0, 0, 0, 0.35);
+}
+
+.mx-strip {
+  flex: 0 0 140px;
+  width: 140px;
+  min-height: 520px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 8px 6px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+}
+
+.mx-return,
+.mx-master {
+  background: var(--surface-2);
+}
+
+.mx-master {
+  border-right: none;
+}
+
+.mx-master-wrap .mx-master {
+  border-left: 1px solid var(--line-strong);
+}
+
+.mx-top {
+  flex: 0 0 var(--mx-top);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.mx-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.mx-num {
+  position: relative;
+  flex: 0 0 auto;
+  width: 20px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.mx-num .strip-reg {
+  right: -2px;
+}
+
+.mx-strip.is-silent .mx-num,
+.mx-strip.is-silent .mx-db {
+  color: var(--faint);
+}
+
+.mx-strip select {
+  height: 22px;
+  font-size: 11.5px;
+  padding: 0 18px 0 6px;
+  background-position: right 6px center;
+}
+
+.mx-preset {
+  flex: 1;
+  width: 0;
+}
+
+.mx-edit {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mx-edit svg {
+  width: 11px;
+  height: 11px;
+  fill: currentColor;
+}
+
+.mx-edit:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+.mx-chan {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+}
+
+.mx-chan select {
+  width: 48px;
+}
+
+.mx-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.mx-title-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.mx-master .mx-title {
+  color: var(--text);
+}
+
+.mx-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.mx-section::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.mx-fill {
+  flex: 1;
+}
+
+/* Inserts: cuatro ranuras fijas */
+.mx-inserts {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mx-slot {
+  display: flex;
+  height: 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.mx-slot.is-empty {
+  border-style: dashed;
+  border-color: var(--line);
+  background: none;
+}
+
+.mx-slot button {
+  border: none;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.mx-slot .mx-slot-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0 7px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mx-slot .mx-slot-name:hover {
+  background: var(--surface-3);
+}
+
+.mx-slot .mx-slot-bypass {
+  flex: 0 0 22px;
+  border-left: 1px solid var(--line);
+  color: var(--accent);
+  font-size: 9px;
+}
+
+.mx-slot.is-bypassed .mx-slot-name {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.mx-slot.is-bypassed .mx-slot-bypass {
+  color: var(--line-strong);
+}
+
+.mx-slot .mx-slot-add {
+  flex: 1;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.mx-slot .mx-slot-add:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Perillas */
+.mx-knobs {
+  display: flex;
+  justify-content: space-around;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.mx-knob-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+}
+
+.mx-knob {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.mx-knob svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.mx-knob-track,
+.mx-knob-fill {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.mx-knob-track {
+  stroke: var(--line-strong);
+}
+
+.mx-knob-fill {
+  stroke: var(--accent);
+}
+
+.mx-knob-ptr {
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.mx-knob:focus-visible {
+  outline-offset: 0;
+}
+
+.mx-knob-label {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.mx-knob-val {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.mx-panrow {
+  align-items: center;
+}
+
+.mx-ms {
+  display: flex;
+  gap: 4px;
+}
+
+.mx-ms button {
+  width: 26px;
+  height: 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.mx-ms button:hover {
+  color: var(--text);
+  border-color: #45454c;
+}
+
+.mx-ms button.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Fader, escala y vúmetro estéreo. Las tres columnas comparten el recorrido
+   útil: el centro de la tapa (26 px) va de 13 px abajo a 13 px arriba */
+.mx-fader-block {
+  flex: 1;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.mx-fader-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.mx-fader {
+  position: relative;
+  width: 30px;
+  cursor: ns-resize;
+  touch-action: none;
+  border-radius: var(--radius-sm);
+  --pos: 0;
+}
+
+.mx-fader-slot {
+  position: absolute;
+  left: 50%;
+  top: 13px;
+  bottom: 13px;
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.mx-fader-cap {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  height: 26px;
+  bottom: calc(var(--pos) * (100% - 26px));
+  border-radius: 3px;
+  background: linear-gradient(to bottom, var(--surface-3), var(--surface-2) 45%, var(--surface-3) 55%, var(--surface-2));
+  box-shadow: 0 0 0 1px var(--line-strong), 0 2px 5px rgba(0, 0, 0, 0.6);
+}
+
+.mx-fader-cap::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 12px;
+  height: 2px;
+  background: var(--text);
+}
+
+.mx-fader:hover .mx-fader-cap::after,
+.mx-fader.is-dragging .mx-fader-cap::after,
+.mx-fader:focus-visible .mx-fader-cap::after {
+  background: var(--accent);
+}
+
+.mx-fader:focus-visible {
+  outline-offset: 0;
+}
+
+.mx-scale {
+  position: relative;
+  width: 20px;
+  margin: 13px 0;
+}
+
+.mx-scale span {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
+  font-family: var(--mono);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--faint);
+}
+
+.mx-meter {
+  display: flex;
+  gap: 2px;
+  margin: 13px 0;
+}
+
+/* Los cortes de color (--cut-mid, --cut-clip) los fija Mixer según la
+   escala de cada fader */
+.mx-meter-ch {
+  position: relative;
+  width: 6px;
+  border-radius: 1px;
+  overflow: hidden;
+  background: linear-gradient(to top,
+    var(--meter-low) 0 var(--cut-mid, 56%),
+    var(--meter-mid) var(--cut-mid, 56%) var(--cut-clip, 75%),
+    var(--meter-clip) var(--cut-clip, 75%) 100%);
+}
+
+/* La tapa oscura cubre lo que no suena (scaleY desde arriba) */
+.mx-meter-cover {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  transform-origin: top;
+}
+
+.mx-peak {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  margin-bottom: -1px;
+  background: var(--meter-low);
+}
+
+.mx-peak[data-zone="mid"] {
+  background: var(--meter-mid);
+}
+
+.mx-peak[data-zone="clip"] {
+  background: var(--meter-clip);
+}
+
+.mx-peak.is-off {
+  display: none;
+}
+
+.mx-db {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text);
+}
+
+/* Indicador del limitador del master */
+.mx-limit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.mx-limit b {
+  font-weight: 500;
+}
+
+.mx-limit.is-on {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+/* Popover de inserts: parámetros del efecto o catálogo */
+.mx-pop {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: 300px;
+  padding: 0;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+}
+
+.mx-pop-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.mx-pop-head button {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.mx-pop-head button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.mx-pop-head button:disabled {
+  color: var(--line-strong);
+  cursor: default;
+}
+
+.mx-pop-body {
+  padding: 10px 12px 4px;
+}
+
+.mx-pop .editor-row {
+  grid-template-columns: 70px 1fr 52px;
+}
+
+.mx-catalog {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 10px;
+}
+
+.mx-catalog button {
+  height: 26px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  padding: 0 8px;
+}
+
+.mx-catalog button:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
 }
 
 /* ==== Guía de composición: modal centrado con índice lateral y texto

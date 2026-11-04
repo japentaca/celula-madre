@@ -205,6 +205,9 @@ window.Visualizer3D = (() => {
   let hitIndex = new Map();   // paso -> índices de instancia que arrancan ahí
 
   let active = false;
+  // Pausa real (consola a la vista): sin rAF ni render, aunque la vista siga
+  // activa; al reanudar se repinta
+  let paused = false;
   let rafId = null;
   const cursorCur = { x: 0, th: 0, y: 0, z: 0 };
   const cursorTarget = { x: 0, th: 0, y: 0, z: 0 };
@@ -4229,16 +4232,30 @@ window.Visualizer3D = (() => {
     dirty = true;
   }
 
-  function setActive(on) {
-    active = on;
-    if (on && renderer && rafId === null) {
+  function startLoop() {
+    if (active && !paused && renderer && rafId === null) {
       clock.getDelta();  // descarta el tiempo transcurrido inactivo
+      dirty = true;
       rafId = requestAnimationFrame(tick);
     }
   }
 
+  function setActive(on) {
+    active = on;
+    startLoop();
+  }
+
+  function setPaused(on) {
+    paused = !!on;
+    if (paused && rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    startLoop();
+  }
+
   function tick() {
-    if (!active || !renderer) {
+    if (!active || paused || !renderer) {
       rafId = null;
       return;
     }
@@ -4344,5 +4361,5 @@ window.Visualizer3D = (() => {
     renderer.render(scene, camera);
   }
 
-  return { init, renderPiece, setCursor, clearCursor, setActive, setMode };
+  return { init, renderPiece, setCursor, clearCursor, setActive, setPaused, setMode };
 })();

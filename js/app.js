@@ -18,7 +18,10 @@ const App = (() => {
     // Mute y solo por índice de pista (el pad cuenta como una más): solo en
     // memoria, sobreviven a las generaciones pero no a recargar
     mute: new Set(),
-    solo: new Set()
+    solo: new Set(),
+    // Consola mezcladora a la vista en lugar de la visualización (no cambia
+    // state.view: al salir vuelve la vista que hubiera)
+    mixer: false
   };
 
   // ---- Despacho de visualización: todas las llamadas van a la vista activa.
@@ -29,15 +32,23 @@ const App = (() => {
     return state.view !== '2d' && window.Visualizer3D ? window.Visualizer3D : Visualizer;
   }
 
+  // Con la consola a la vista no se pinta nada: al salir, vizRefresh rehace
+  // la pieza y repone el cursor
   function vizRender() {
-    if (state.piece) viz().renderPiece(state.piece);
+    if (state.piece && !state.mixer) viz().renderPiece(state.piece);
   }
 
   // Re-render de la pieza actual conservando el cursor: renderPiece lo borra
   // y en pausa no llegaría otro paso que lo repusiera
   function vizRefresh() {
     vizRender();
-    if (state.piece && state.cursorStep >= 0) viz().setCursor(state.cursorStep);
+    if (state.cursorStep >= 0) vizCursor(state.cursorStep);
+  }
+
+  function vizCursor(step) {
+    if (state.mixer || !state.piece) return;
+    if (step >= 0) viz().setCursor(step);
+    else viz().clearCursor();
   }
 
   function setView(view) {
@@ -51,8 +62,7 @@ const App = (() => {
     state.view = view;
     select.value = view;
     const is3d = view !== '2d';
-    document.getElementById('grid-container').classList.toggle('hidden', is3d);
-    document.getElementById('viz3d-container').classList.toggle('hidden', !is3d);
+    showVizContainers();
     if (window.Visualizer3D) {
       if (is3d) {
         Visualizer3D.init('viz3d-container');
@@ -61,6 +71,32 @@ const App = (() => {
       Visualizer3D.setActive(is3d);
     }
     vizRefresh();
+    scheduleSave();
+  }
+
+  function showVizContainers() {
+    const is3d = state.view !== '2d';
+    document.getElementById('grid-container').classList.toggle('hidden', is3d || state.mixer);
+    document.getElementById('viz3d-container').classList.toggle('hidden', !is3d || state.mixer);
+    // el panel lateral repite los controles de la consola: se oculta con ella
+    document.getElementById('track-panel').classList.toggle('hidden', state.mixer);
+  }
+
+  // Consola ↔ visualización. La vista 3D se pausa de verdad (sin rAF) y el
+  // piano roll deja de recibir el cursor; al volver se repinta todo
+  function setMixer(on) {
+    on = !!on;
+    if (state.mixer === on) return;
+    state.mixer = on;
+    document.getElementById('btn-mixer').setAttribute('aria-pressed', String(on));
+    showVizContainers();
+    if (window.Visualizer3D) Visualizer3D.setPaused(on);
+    Mixer.setVisible(on);
+    if (!on) {
+      // el panel lateral pudo quedar desfasado por lo que se tocó en la consola
+      if (state.piece) buildTrackPanel(state.piece.numTracks);
+      vizRefresh();
+    }
     scheduleSave();
   }
 
@@ -104,6 +140,8 @@ const App = (() => {
         master: document.getElementById('slider-master').value,
         revdecay: document.getElementById('slider-revdecay').value
       },
+      // nivel de los retornos de la consola (el mute no se guarda)
+      returns: [AudioEngine.getReturnLevel(0), AudioEngine.getReturnLevel(1)],
       trackSettings: state.trackSettings,
       resolvedPresets: state.resolvedPresets,
       padSettings: state.padSettings,
@@ -235,6 +273,13 @@ const App = (() => {
     setControl('slider-feedback', fx.feedback, 'input');
     setControl('slider-master', fx.master, 'input');
     setControl('slider-revdecay', fx.revdecay, 'input');
+    if (Array.isArray(saved.returns)) {
+      saved.returns.forEach((level, aux) => {
+        if (typeof level === 'number' && isFinite(level)) AudioEngine.setReturnLevel(aux, level);
+      });
+    }
+    // En kiosco se arranca siempre en la visualización
+    if (ui.mixer && !ui.kiosk) setMixer(true);
 
     // Contornos: se marcan los guardados que sigan existiendo
     if (Array.isArray(ui.contours)) {
@@ -376,7 +421,8 @@ const App = (() => {
       autogen: document.getElementById('checkbox-autogen').checked,
       autorestart: document.getElementById('checkbox-autorestart').checked,
       kiosk: document.getElementById('checkbox-kiosk').checked,
-      view: state.view
+      view: state.view,
+      mixer: state.mixer
     };
     for (const name of RANDOM_RANGES) {
       ui[`${name}Random`] = document.getElementById(`checkbox-${name}-random`).checked;
@@ -520,6 +566,7 @@ const App = (() => {
       const index = parseInt(sliderDelayDiv.value);
       document.getElementById('val-delaydiv').textContent = AudioEngine.DELAY_SUBDIVISIONS[index].label;
       AudioEngine.setDelaySubdivision(index);
+      Mixer.syncBus();
     };
     sliderDelayDiv.addEventListener('input', applyDelayDiv);
     applyDelayDiv();
@@ -530,6 +577,7 @@ const App = (() => {
       const value = parseFloat(sliderFeedback.value);
       document.getElementById('val-feedback').textContent = value.toFixed(2);
       AudioEngine.setDelayFeedback(value);
+      Mixer.syncBus();
     };
     sliderFeedback.addEventListener('input', applyFeedback);
     applyFeedback();
@@ -540,6 +588,7 @@ const App = (() => {
       const value = parseFloat(sliderMaster.value);
       document.getElementById('val-master').textContent = value.toFixed(2);
       AudioEngine.setMasterVolume(value);
+      Mixer.syncBus();
     });
 
     const sliderRevDecay = document.getElementById('slider-revdecay');
@@ -548,6 +597,7 @@ const App = (() => {
     sliderRevDecay.addEventListener('input', () => {
       const value = parseFloat(sliderRevDecay.value);
       document.getElementById('val-revdecay').textContent = `${value.toFixed(1)}s`;
+      Mixer.syncBus();
       // Debounce: cada cambio re-renderiza la impulsional del reverb (costoso)
       clearTimeout(revDecayTimer);
       revDecayTimer = setTimeout(() => AudioEngine.setReverbDecay(value), 150);
@@ -561,6 +611,7 @@ const App = (() => {
     document.getElementById('btn-play').addEventListener('click', togglePlay);
     document.getElementById('btn-stop').addEventListener('click', stop);
     document.getElementById('select-view').addEventListener('change', e => setView(e.target.value));
+    document.getElementById('btn-mixer').addEventListener('click', () => setMixer(!state.mixer));
 
     // Tonalidad y escala se aplican en vivo sobre la pieza actual. Elegir
     // "Aleatoria" no toca la pieza en curso: el sorteo ocurre al generar
@@ -735,6 +786,7 @@ const App = (() => {
     renderPieceBar();
     vizRender();
     buildTrackPanel(allTracks);
+    Mixer.build();
     SynthEditor.ensureValid(allTracks);
     // los presets sorteados forman parte de lo que se restaura al recargar
     scheduleSave();
@@ -743,14 +795,18 @@ const App = (() => {
   // Mute/solo → audible por pista en ambos motores. Con algún solo suenan solo
   // las pistas en solo (los retornos no se ven afectados); el kiosco ignora
   // ambos para no quedarse mudo sin interfaz a la vista
-  function applyAudibility() {
+  function isAudible(t) {
     const kiosk = document.getElementById('checkbox-kiosk').checked;
-    const soloing = state.solo.size > 0;
+    return kiosk || (!state.mute.has(t) && (state.solo.size === 0 || state.solo.has(t)));
+  }
+
+  function applyAudibility() {
     for (let t = 0; t < currentNumTracks(); t++) {
-      const audible = kiosk || (!state.mute.has(t) && (!soloing || state.solo.has(t)));
+      const audible = isAudible(t);
       AudioEngine.setTrackAudible(t, audible);
       MidiEngine.setTrackMuted(t, !audible);
     }
+    Mixer.syncMuteSolo();
   }
 
   function toggleMute(t) {
@@ -807,6 +863,33 @@ const App = (() => {
     return r ? ` title="${r < 0 ? 'Pista grave: una octava abajo' : 'Pista aguda: una octava arriba'}"` : '';
   }
 
+  // Opciones del selector de preset de una pista (panel lateral y consola):
+  // aleatorio (con lo sorteado), presets de fábrica y de usuario
+  function presetOptionsHtml(t) {
+    const settings = settingsOf(t);
+    const userIds = SynthEditor.getUserPresetNames().map(n => SynthEditor.USER_PREFIX + n);
+    return ['random'].concat(AudioEngine.PRESETS, userIds).map(p => {
+      const label = p === 'random' ? randomOptionLabel(t) : displayName(p);
+      const selected = settings.preset === p ? ' selected' : '';
+      return `<option value="${escapeHtml(p)}"${selected}>${escapeHtml(label)}</option>`;
+    }).join('');
+  }
+
+  // Elección de preset en una pista (panel lateral o consola)
+  function choosePreset(t, value) {
+    const settings = settingsOf(t);
+    settings.preset = value;
+    // elegir un preset descarta la edición en vivo del editor de sintes
+    settings.edited = null;
+    const resolved = settings.preset === 'random' ? randomPresetFor(t) : settings.preset;
+    setResolved(t, resolved);
+    // definición completa: cambiar de preset también reemplaza la cadena de efectos
+    const def = resolved.startsWith(SynthEditor.USER_PREFIX) ? SynthEditor.getUserPreset(resolved) : null;
+    AudioEngine.setTrackPreset(t, def || AudioEngine.presetDef(resolved));
+    SynthEditor.refreshIfOpen(t, resolved);
+    scheduleSave();
+  }
+
   function buildTrackPanel(numTracks) {
     const panel = document.getElementById('track-panel');
     if (!panel) return;
@@ -814,12 +897,7 @@ const App = (() => {
     let html = `<div class="panel-spacer"><span>Pistas</span><span>${numTracks}</span></div>`;
     for (let t = 0; t < numTracks; t++) {
       const settings = settingsOf(t);
-      const userIds = SynthEditor.getUserPresetNames().map(n => SynthEditor.USER_PREFIX + n);
-      const options = ['random'].concat(AudioEngine.PRESETS, userIds).map(p => {
-        const label = p === 'random' ? randomOptionLabel(t) : displayName(p);
-        const selected = settings.preset === p ? ' selected' : '';
-        return `<option value="${escapeHtml(p)}"${selected}>${escapeHtml(label)}</option>`;
-      }).join('');
+      const options = presetOptionsHtml(t);
       const chanOptions = Array.from({ length: 16 }, (_, i) => {
         const selected = settings.midiChannel === i + 1 ? ' selected' : '';
         return `<option value="${i + 1}"${selected}>${i + 1}</option>`;
@@ -851,16 +929,8 @@ const App = (() => {
 
       const presetSelect = strip.querySelector('.strip-preset');
       presetSelect.addEventListener('change', () => {
-        settings.preset = presetSelect.value;
-        // elegir un preset descarta la edición en vivo del editor de sintes
-        settings.edited = null;
-        const resolved = settings.preset === 'random' ? randomPresetFor(t) : settings.preset;
-        setResolved(t, resolved);
+        choosePreset(t, presetSelect.value);
         presetSelect.querySelector('option[value="random"]').textContent = randomOptionLabel(t);
-        // definición completa: cambiar de preset también reemplaza la cadena de efectos
-        const def = resolved.startsWith(SynthEditor.USER_PREFIX) ? SynthEditor.getUserPreset(resolved) : null;
-        AudioEngine.setTrackPreset(t, def || AudioEngine.presetDef(resolved));
-        SynthEditor.refreshIfOpen(t, resolved);
       });
 
       strip.querySelector('.strip-edit').addEventListener('click', () => {
@@ -908,12 +978,12 @@ const App = (() => {
     Composer.play(
       step => {
         state.cursorStep = step;
-        viz().setCursor(step);
+        vizCursor(step);
         updatePosition(step);
       },
       () => {
         state.cursorStep = -1;
-        viz().clearCursor();
+        vizCursor(-1);
         setPlayingUI(false);
         updatePosition(-1);
         // El kiosco nunca se queda en silencio: sin Auto-generar ni
@@ -956,7 +1026,7 @@ const App = (() => {
     Composer.stop();
     Composer.stop();
     state.cursorStep = -1;
-    viz().clearCursor();
+    vizCursor(-1);
     setPlayingUI(false);
     updatePosition(-1);
   }
@@ -977,6 +1047,11 @@ const App = (() => {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
       if (e.code === 'KeyF') {
         toggleFullscreen();
+        return;
+      }
+      // M = consola mezcladora ↔ visualización
+      if (e.code === 'KeyM') {
+        setMixer(!state.mixer);
         return;
       }
       if (e.code !== 'Space') return;
@@ -1218,7 +1293,7 @@ const App = (() => {
       // en marcha el cursor lo mueve el próximo paso; en pausa se marca ya
       if (!Composer.getIsPlaying()) {
         state.cursorStep = step;
-        viz().setCursor(step);
+        vizCursor(step);
       }
       lastShownSecond = -1;
       updatePosition(step);
@@ -1389,6 +1464,7 @@ const App = (() => {
       onChange: (t, def) => {
         if (!isPadTrack(t)) ensureTrackSettings(t + 1);
         settingsOf(t).edited = def;
+        Mixer.refreshTrack(t);
         scheduleSave();
       },
       onPresetsChanged: () => {
@@ -1405,6 +1481,7 @@ const App = (() => {
           state.padResolved = null;
         }
         buildTrackPanel(currentNumTracks());
+        Mixer.build();
         scheduleSave();
       },
       onPresetSaved: (t, name) => {
@@ -1413,13 +1490,64 @@ const App = (() => {
         settings.edited = null;
         setResolved(t, settings.preset);
         buildTrackPanel(currentNumTracks());
+        Mixer.build();
         scheduleSave();
+      }
+    });
+  }
+
+  // La consola lee y escribe los ajustes de App a través de estos callbacks
+  function setupMixer() {
+    // Ajustes de bus: los sliders de los diálogos Efectos y Salida son la
+    // fuente (persistencia y AudioEngine pasan por su evento input)
+    const BUS = {
+      revdecay: { id: 'slider-revdecay', label: 'Decay', title: 'Duración de la cola del reverb', def: AudioEngine.DEFAULT_REVERB_DECAY,
+        format: v => `${v.toFixed(1)}s` },
+      delaydiv: { id: 'slider-delaydiv', label: 'Subdiv', title: 'Subdivisión rítmica del delay (sigue al tempo)', def: AudioEngine.DEFAULT_DELAY_SUBDIVISION,
+        format: v => AudioEngine.DELAY_SUBDIVISIONS[Math.round(v)].label },
+      feedback: { id: 'slider-feedback', label: 'Feedback', title: 'Realimentación del delay', def: AudioEngine.DEFAULT_DELAY_FEEDBACK,
+        format: v => v.toFixed(2) },
+      master: { id: 'slider-master', def: AudioEngine.DEFAULT_MASTER_VOLUME }
+    };
+    Mixer.init('mixer-container', {
+      hasPiece: () => !!state.piece,
+      numTracks: currentNumTracks,
+      settingsOf,
+      resolvedOf,
+      trackHead: t => ({ mark: registerMark(t), title: registerTitle(t) }),
+      presetOptionsHtml,
+      choosePreset,
+      openEditor: t => SynthEditor.open(t, resolvedOf(t) || 'Synth', settingsOf(t).edited),
+      // la consola ya editó settings.edited en el sitio
+      commitEdited: t => {
+        SynthEditor.refreshIfOpen(t, resolvedOf(t) || 'Synth', settingsOf(t).edited);
+        scheduleSave();
+      },
+      toggleMute,
+      toggleSolo,
+      isMuted: t => state.mute.has(t),
+      isSoloed: t => state.solo.has(t),
+      isAudible,
+      save: scheduleSave,
+      bus: {
+        get: name => {
+          const b = BUS[name];
+          const el = document.getElementById(b.id);
+          const step = name === 'delaydiv' ? 1 : null;
+          return { ...b, value: parseFloat(el.value), min: parseFloat(el.min), max: parseFloat(el.max), step };
+        },
+        set: (name, value) => {
+          const el = document.getElementById(BUS[name].id);
+          el.value = String(value);
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
       }
     });
   }
 
   function init() {
     const saved = loadSettings() || FIRST_VISIT_SETTINGS;
+    setupMixer();
     setupUI(saved);
     setupKeyboard();
     setupPieceBar();

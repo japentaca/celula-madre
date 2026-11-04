@@ -569,10 +569,11 @@ const SynthEditor = (() => {
     if (!isOpen()) root.showPopover();
   }
 
-  // Reabre con estado fresco si el preset de la pista cambió desde fuera
-  function refreshIfOpen(trackIndex, resolvedName) {
+  // Reabre con estado fresco si el preset o la edición de la pista cambiaron
+  // desde fuera (selector de preset, inserts de la consola)
+  function refreshIfOpen(trackIndex, resolvedName, editedDef = null) {
     if (current && current.trackIndex === trackIndex && isOpen()) {
-      open(trackIndex, resolvedName, null);
+      open(trackIndex, resolvedName, editedDef);
     }
   }
 
@@ -593,6 +594,11 @@ const SynthEditor = (() => {
     ensureValid,
     getUserPresetNames,
     getUserPreset,
+    defFromName,
+    // Compartidos con los inserts de la consola (Mixer)
+    renderRow,
+    FX_SCHEMAS,
+    FX_DEFAULTS,
     USER_PREFIX
   };
 })();

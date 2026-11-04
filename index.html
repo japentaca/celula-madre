@@ -48,6 +48,8 @@
       <button popovertarget="dlg-guide" class="guide-btn" title="Cómo se compone una pieza: célula, variaciones, forma, orquestación, plan tonal, armonía y pases" aria-label="Cómo funciona">?</button>
     </nav>
 
+    <button id="btn-mixer" class="view-btn" aria-pressed="false" title="Consola mezcladora: canales, inserts, envíos, retornos y master (M)">Consola</button>
+
     <div class="view-pick">
       <label for="select-view">Vista</label>
       <select id="select-view" title="Visualización de la grilla: piano roll 2D, ciudad de notas, túnel helicoidal (una vuelta = una célula), terreno orgánico, constelación de partículas, caja de música (rodillos con pinos que empujan las púas de un peine), órbita de quintas (faros en el ciclo de quintas y una nave que orbita el de cada sección), pianola (rollo de papel perforado: agujero = nota, un lector con lámpara los enciende y proyecta su luz en el suelo), telar (cada pista un hilo de urdimbre que sube con la altura, liso si liga y en puntadas si pica; bloques como tramas de color y la lanzadera como cursor), arpa (una cuerda por pista que cada nota pulsa: vibra con nodos según la altura y se apaga según el sustain; una regla de tiempo con las secciones lleva el cursor), galaxia (la pieza entera enrollada en espiral vista desde arriba: radio = tiempo, un brazo por pista, una estrella por nota; un brazo de radar barre, lo sonado queda cálido y lo por venir frío), jardín (cada nota una flor que brota al llegar el cursor: tallo = altura, corola = velocity, especie = motivo, hoja = duración; las secciones son parterres y la recapitulación florece en ámbar), enjambre (una bandada de partículas por pista que vuela a la altura de su melodía, se compacta con la densidad de ataques, destella con cada nota y se dispersa en el silencio), cinta de Möbius (la pieza entera en una vuelta de la cinta, pistas a lo ancho; la cámara la recorre en raíl y termina donde empezó, por la otra cara)">
@@ -250,7 +252,7 @@
     <div class="dialog-body">
       <div class="dialog-row">
         <label title="Volumen general de la salida de audio">Volumen</label>
-        <input type="range" id="slider-master" min="0" max="1" step="0.01" value="0.6">
+        <input type="range" id="slider-master" min="0" max="1" step="0.001" value="0.6">
         <span class="dialog-val" id="val-master">0.60</span>
       </div>
       <div class="dialog-row">
@@ -705,6 +707,7 @@
       <canvas id="grid-canvas"></canvas>
     </div>
     <div id="viz3d-container" class="hidden"></div>
+    <div id="mixer-container" class="hidden" aria-label="Consola mezcladora"></div>
     <aside id="track-panel"></aside>
   </main>
   <script type="importmap">
@@ -731,6 +734,7 @@
   <script src="js/counterpoint.js"></script>
   <script src="js/composer.js"></script>
   <script src="js/syntheditor.js"></script>
+  <script src="js/mixer.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
