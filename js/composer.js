@@ -371,11 +371,15 @@ const Composer = (() => {
   // sortea por pieza: una pista grave (−1) desde 2 pistas y una aguda (+1)
   // desde 3; las demás en el medio. La grave puede bajar hasta Do2 porque
   // App le da un sinte rico en armónicos si su preset es aleatorio
-  // (AudioEngine.BASS_PRESETS); la aguda sube hasta Mi7
+  // (AudioEngine.BASS_PRESETS); la aguda no pasa de Re6, que más arriba
+  // una senoidal chilla. Solo las pistas del medio deciden el registro de la
+  // sección; la grave y la aguda ajustan después su propia octava sección a
+  // sección (section.trackOctaves), acercándola a 0 si se salen de su suelo
+  // o su techo, para no arrastrar con ellas a todas las demás
   const TRACK_REGISTERS = {
     '-1': { floor: 36, ceil: 84 },
     '0': { floor: 48, ceil: 93 },
-    '1': { floor: 55, ceil: 100 }
+    '1': { floor: 55, ceil: 86 }
   };
   function planTrackRegisters(numTracks) {
     const order = Array.from({ length: numTracks }, (_, t) => t);
@@ -409,12 +413,12 @@ const Composer = (() => {
             const midi = Generator.degreeToMidi(step.degree, local, key);
             sum += (midi - key - 60) * block.repeats;
             count += block.repeats;
-            notes.push(midi + 12 * trackRegisters[t]);
+            notes.push(midi);
           }
         }
         if (!notes.length) return;
         notes.sort((a, b) => a - b);
-        tracks.push({ ...TRACK_REGISTERS[trackRegisters[t]], low: q(notes, REGISTER_LOW_Q), high: q(notes, REGISTER_HIGH_Q) });
+        tracks.push({ t, role: trackRegisters[t], low: q(notes, REGISTER_LOW_Q), high: q(notes, REGISTER_HIGH_Q) });
       });
       return { mean: count ? sum / count : 0, tracks };
     });
@@ -422,7 +426,7 @@ const Composer = (() => {
     const options = sections.map((section, i) => {
       const shift = modulation === 'real' ? section.shift : 0;
       const target = 12 * section.character.register;
-      const { tracks } = stats[i];
+      const tracks = stats[i].tracks.filter(tr => tr.role === 0).map(tr => ({ ...tr, ...TRACK_REGISTERS[0] }));
       const range = [-2, -1, 0, 1, 2].map(k => ({ k, T: shift + 12 * k })).filter(o => Math.abs(o.T) <= REGISTER_MAX);
       // Lo que se salen las pistas por abajo o por arriba con el transporte T;
       // si ninguna octava las deja a todas dentro, la que menos se sale
@@ -447,7 +451,19 @@ const Composer = (() => {
       });
     }
     const best = costs.reduce((a, b) => (b.cost < a.cost ? b : a));
-    sections.forEach((section, i) => { section.octave = best.path[i].k; });
+    sections.forEach((section, i) => {
+      const T = best.path[i].T;
+      section.octave = best.path[i].k;
+      section.trackOctaves = trackRegisters.slice();
+      for (const tr of stats[i].tracks) {
+        if (tr.role === 0) continue;
+        const { floor, ceil } = TRACK_REGISTERS[tr.role];
+        let r = tr.role;
+        while (r > 0 && tr.high + T + 12 * r > ceil) r--;
+        while (r < 0 && tr.low + T + 12 * r < floor) r++;
+        section.trackOctaves[tr.t] = r;
+      }
+    });
   }
 
   // opts: { numTracks, motifs, formParts, cellLength, scale, key, repeatsByLetter?, modulation? }
@@ -547,7 +563,7 @@ const Composer = (() => {
                 motifIndex: block.motifIndex
               };
               if (section.mode) cell.mode = section.mode;
-              const octave = (section.octave || 0) + trackRegisters[t];
+              const octave = (section.octave || 0) + section.trackOctaves[t];
               if (octave) cell.octave = octave;
               cell.midi = Generator.cellMidi(step.degree, scale, key, cell, modulation);
               grid[t][blockPos + s] = cell;

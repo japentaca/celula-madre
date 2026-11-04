@@ -240,7 +240,7 @@ plan armónico (`Harmony.plan` + `Harmony.spell`) → `Humanizer` → `Energy` �
   «fifths»; La menor desde Do = +3). Además `arrival` (`'dominant'`,
   `'subdominant'`, `'relative'`, `'parallel'` o null): cómo se llega a ella.
   Cada nota del `grid` copia `keyOffset` y `mode` de su sección; su `octave`
-  es la de la sección más el registro de su pista.
+  es la de la sección más `section.trackOctaves[pista]`.
   **Registro de pista** (`piece.trackRegisters`, octavas, `planTrackRegisters`):
   sorteado por pieza, una pista grave (−1) desde 2 pistas y una aguda (+1)
   desde 3; el resto 0. Sin él todas las pistas compartían las mismas dos
@@ -253,10 +253,12 @@ plan armónico (`Harmony.plan` + `Harmony.spell`) → `Humanizer` → `Energy` �
   transporte efectivo T = `shift` (solo con modulación real) + 12·`octave` se
   elige por programación dinámica sobre la pieza entera entre las octavas
   que dejan T a ≤ `REGISTER_WINDOW` (8) semitonos de 12·`character.register`
-  y con |T| ≤ 17 — y, antes que eso, que dejan audible cada pista: el
-  percentil 10 de sus notas (con la tonalidad real y su registro de pista)
-  ≥ el suelo de su papel y el 90 ≤ su techo (`TRACK_REGISTERS`: grave
-  36–84, media 48–93, aguda 55–100); sin ese suelo, sombrío + transporte
+  y con |T| ≤ 17 — y, antes que eso, que dejan audibles las pistas del
+  medio: el percentil 10 de sus notas (con la tonalidad real) ≥ 48 y el 90
+  ≤ 93 (`TRACK_REGISTERS`). La grave y la aguda no deciden T: tras elegirlo,
+  cada sección acerca su octava propia a 0 si se salen de su suelo o techo
+  (grave 36–84, aguda 55–86, Re6: más arriba la senoidal chilla) y la guarda
+  en `section.trackOctaves`; sin ese suelo, sombrío + transporte
   de la modulación + tónica grave hundían frases enteras bajo Do2 —, minimizando el salto de altura media entre secciones
   consecutivas (contenido de la letra, en la escala local y sin registro de
   pista, + T, descontado el
