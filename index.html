@@ -43,7 +43,6 @@
 
     <nav class="menus" aria-label="Ajustes">
       <button popovertarget="dlg-generation" class="dialog-btn">Generación</button>
-      <button popovertarget="dlg-effects" class="dialog-btn">Efectos</button>
       <button popovertarget="dlg-output" class="dialog-btn">Salida</button>
       <button popovertarget="dlg-guide" class="guide-btn" title="Cómo se compone una pieza: célula, variaciones, forma, orquestación, plan tonal, armonía y pases" aria-label="Cómo funciona">?</button>
     </nav>
@@ -216,30 +215,6 @@
           <option value="11">B</option>
         </select>
         <span class="dialog-val"></span>
-      </div>
-    </div>
-  </div>
-
-  <div id="dlg-effects" class="dialog" popover>
-    <div class="dialog-header">
-      <span>Efectos</span>
-      <button class="dialog-close" popovertarget="dlg-effects" popovertargetaction="hide">✕</button>
-    </div>
-    <div class="dialog-body">
-      <div class="dialog-row">
-        <label title="Subdivisión rítmica del delay (sigue al tempo)">Delay</label>
-        <input type="range" id="slider-delaydiv" min="0" max="9" value="5">
-        <span class="dialog-val" id="val-delaydiv">1/8·</span>
-      </div>
-      <div class="dialog-row">
-        <label title="Realimentación del delay (cantidad de repeticiones)">Feedback</label>
-        <input type="range" id="slider-feedback" min="0" max="0.9" step="0.01" value="0.35">
-        <span class="dialog-val" id="val-feedback">0.35</span>
-      </div>
-      <div class="dialog-row">
-        <label title="Duración de la cola del reverb (segundos)">Reverb</label>
-        <input type="range" id="slider-revdecay" min="0.5" max="12" step="0.1" value="3">
-        <span class="dialog-val" id="val-revdecay">3.0s</span>
       </div>
     </div>
   </div>
@@ -687,9 +662,11 @@
             mientras suena.</li>
             <li><b>Tempo en vivo:</b> el slider ♩ cambia la velocidad sin alterar la
             partitura.</li>
-            <li><b>Sonido:</b> cada pista tiene su instrumento, volumen, paneo y
-            envíos; el editor de sintes ajusta timbre y efectos. Nada de esto cambia
-            la composición.</li>
+            <li><b>Sonido:</b> la <b>consola</b> (botón Consola o tecla M) tiene un
+            canal por pista con su instrumento, efectos de inserción, envíos a reverb
+            y delay, paneo, mute/solo y fader, más los retornos de reverb y delay
+            (cola, subdivisión y realimentación) y el master; el editor de sintes (✎)
+            ajusta el timbre. Nada de esto cambia la composición.</li>
           </ul>
         </section>
       </article>
@@ -708,7 +685,6 @@
     </div>
     <div id="viz3d-container" class="hidden"></div>
     <div id="mixer-container" class="hidden" aria-label="Consola mezcladora"></div>
-    <aside id="track-panel"></aside>
   </main>
   <script type="importmap">
   {

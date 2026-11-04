@@ -1,6 +1,8 @@
-// Editor de sintetizador y efectos por pista: modal que edita en vivo el sinte
-// (esquema declarativo de parámetros por tipo) y una cadena de efectos de
-// inserción, y gestiona presets de usuario en localStorage con export/import.
+// Editor de sintetizador por pista: modal que edita en vivo el sinte (esquema
+// declarativo de parámetros por tipo) y gestiona presets de usuario en
+// localStorage con export/import. La cadena de efectos de inserción se edita
+// solo en la consola (Mixer): el editor no la guarda, la pide a App
+// (callback chainOf) al guardar un preset, y al cambiar de sinte la conserva.
 // No toca el grafo de audio directamente: todo pasa por la API de AudioEngine;
 // cada cambio se comunica a App por callback para que la definición editada
 // persista entre generaciones (trackSettings.edited)
@@ -106,7 +108,9 @@ const SynthEditor = (() => {
     ]
   };
 
-  // Los tipos deben coincidir con EFFECTS de audio.js
+  // Efectos de inserción: esquemas y valores iniciales. Los usa la consola
+  // (Mixer) para editar los inserts y el import para validar presets. Los
+  // tipos deben coincidir con EFFECTS de audio.js
   const FX_SCHEMAS = {
     Filter: [
       { path: 'type', label: 'Tipo', options: ['lowpass', 'highpass', 'bandpass', 'notch'] },
@@ -170,7 +174,7 @@ const SynthEditor = (() => {
 
   let root = null;
   let refs = null;
-  let current = null; // { trackIndex, def: { base, params, chain } }
+  let current = null; // { trackIndex, def: { base, params } }
   let cbs = {};
 
   const clone = obj => JSON.parse(JSON.stringify(obj));
@@ -254,6 +258,12 @@ const SynthEditor = (() => {
     if (cbs.onChange && current) cbs.onChange(current.trackIndex, clone(current.def));
   }
 
+  // Definición completa de la pista (sinte del editor + cadena vigente)
+  function fullDef() {
+    const chain = cbs.chainOf ? cbs.chainOf(current.trackIndex) : [];
+    return clone({ base: current.def.base, params: current.def.params, chain: chain || [] });
+  }
+
   function renderRow(row, value, onChange) {
     const el = document.createElement('div');
     el.className = 'editor-row';
@@ -329,10 +339,8 @@ const SynthEditor = (() => {
     baseSelect.addEventListener('change', () => {
       current.def.base = baseSelect.value;
       current.def.params = {};
-      // recrea el sinte conservando la cadena de efectos actual
-      AudioEngine.setTrackPreset(current.trackIndex, {
-        base: current.def.base, params: null, chain: current.def.chain
-      });
+      // recrea el sinte; sin chain, AudioEngine conserva los inserts (y su bypass)
+      AudioEngine.setTrackPreset(current.trackIndex, { base: current.def.base, params: null });
       materializeParams();
       renderSynth();
       notifyChange();
@@ -354,60 +362,6 @@ const SynthEditor = (() => {
         }));
       }
     }
-  }
-
-  function applyChain() {
-    AudioEngine.setTrackChain(current.trackIndex, current.def.chain);
-    renderChain();
-    notifyChange();
-  }
-
-  function renderFx(fx, index) {
-    const item = document.createElement('div');
-    item.className = 'fx-item';
-    const head = document.createElement('div');
-    head.className = 'fx-head';
-    const title = document.createElement('span');
-    title.textContent = `${index + 1}. ${fx.type}`;
-    head.appendChild(title);
-    const btns = document.createElement('span');
-    const mkBtn = (text, tip, handler, disabled) => {
-      const b = document.createElement('button');
-      b.textContent = text;
-      b.title = tip;
-      b.disabled = !!disabled;
-      b.addEventListener('click', handler);
-      btns.appendChild(b);
-    };
-    mkBtn('↑', 'Subir en la cadena', () => {
-      const chain = current.def.chain;
-      [chain[index - 1], chain[index]] = [chain[index], chain[index - 1]];
-      applyChain();
-    }, index === 0);
-    mkBtn('↓', 'Bajar en la cadena', () => {
-      const chain = current.def.chain;
-      [chain[index], chain[index + 1]] = [chain[index + 1], chain[index]];
-      applyChain();
-    }, index === current.def.chain.length - 1);
-    mkBtn('✕', 'Quitar de la cadena', () => {
-      current.def.chain.splice(index, 1);
-      applyChain();
-    });
-    head.appendChild(btns);
-    item.appendChild(head);
-    for (const row of FX_SCHEMAS[fx.type]) {
-      item.appendChild(renderRow(row, fx.params[row.path], value => {
-        fx.params[row.path] = value;
-        AudioEngine.setTrackEffectParams(current.trackIndex, index, { [row.path]: value });
-        notifyChange();
-      }));
-    }
-    return item;
-  }
-
-  function renderChain() {
-    refs.chain.innerHTML = '';
-    current.def.chain.forEach((fx, i) => refs.chain.appendChild(renderFx(fx, i)));
   }
 
   function updateDeleteState() {
@@ -437,18 +391,11 @@ const SynthEditor = (() => {
       </div>
       <div class="editor-body">
         <div class="editor-col" id="se-synth-col"></div>
-        <div class="editor-col">
-          <div class="editor-section">Cadena de efectos</div>
-          <div class="fx-add-row">
-            <select id="se-fx-type"></select>
-            <button id="se-fx-add">+ Añadir</button>
-          </div>
-          <div id="se-chain"></div>
-        </div>
       </div>
+      <p class="editor-note">Los efectos de inserción se editan en la consola (Consola · Inserts).</p>
       <div class="editor-footer">
         <input id="se-name" placeholder="nombre del preset" spellcheck="false">
-        <button id="se-save" title="Guardar sinte + efectos como preset de usuario">Guardar</button>
+        <button id="se-save" title="Guardar el sinte y los inserts de la pista como preset de usuario">Guardar</button>
         <button id="se-delete" title="Borrar el preset de usuario con ese nombre">Borrar</button>
         <button id="se-export" title="Descargar todos los presets de usuario (JSON)">↧</button>
         <button id="se-import" title="Importar presets de usuario (JSON)">↥</button>
@@ -458,29 +405,14 @@ const SynthEditor = (() => {
     refs = {
       title: root.querySelector('#se-title'),
       synthCol: root.querySelector('#se-synth-col'),
-      fxType: root.querySelector('#se-fx-type'),
-      chain: root.querySelector('#se-chain'),
       name: root.querySelector('#se-name'),
       deleteBtn: root.querySelector('#se-delete'),
       file: root.querySelector('#se-file')
     };
 
-    for (const type of Object.keys(FX_SCHEMAS)) {
-      const o = document.createElement('option');
-      o.value = type;
-      o.textContent = type;
-      refs.fxType.appendChild(o);
-    }
-
     root.querySelector('#se-close').addEventListener('click', close);
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && isOpen()) close();
-    });
-
-    root.querySelector('#se-fx-add').addEventListener('click', () => {
-      const type = refs.fxType.value;
-      current.def.chain.push({ type, params: clone(FX_DEFAULTS[type]) });
-      applyChain();
     });
 
     refs.name.addEventListener('input', updateDeleteState);
@@ -489,7 +421,7 @@ const SynthEditor = (() => {
       const name = refs.name.value.trim();
       if (!name || !current) return;
       const presets = getUserPresets();
-      presets[name] = clone(current.def);
+      presets[name] = fullDef();
       setUserPresets(presets);
       updateDeleteState();
       if (cbs.onPresetSaved) cbs.onPresetSaved(current.trackIndex, name);
@@ -557,23 +489,22 @@ const SynthEditor = (() => {
   // editedDef: definición en curso si la pista ya fue editada (o null)
   function open(trackIndex, resolvedName, editedDef) {
     ensureDom();
-    current = { trackIndex, def: editedDef ? clone(editedDef) : defFromName(resolvedName) };
+    const def = editedDef ? clone(editedDef) : defFromName(resolvedName);
+    current = { trackIndex, def: { base: def.base, params: def.params || {} } };
     materializeParams();
-    refs.title.textContent = `Pista ${trackIndex + 1} — sinte y efectos`;
+    refs.title.textContent = `Pista ${trackIndex + 1} — sinte`;
     refs.name.value = resolvedName.startsWith(USER_PREFIX)
       ? resolvedName.slice(USER_PREFIX.length)
       : '';
     updateDeleteState();
     renderSynth();
-    renderChain();
     if (!isOpen()) root.showPopover();
   }
 
-  // Reabre con estado fresco si el preset o la edición de la pista cambiaron
-  // desde fuera (selector de preset, inserts de la consola)
-  function refreshIfOpen(trackIndex, resolvedName, editedDef = null) {
+  // Reabre con estado fresco si el preset de la pista cambió desde fuera
+  function refreshIfOpen(trackIndex, resolvedName) {
     if (current && current.trackIndex === trackIndex && isOpen()) {
-      open(trackIndex, resolvedName, editedDef);
+      open(trackIndex, resolvedName, null);
     }
   }
 

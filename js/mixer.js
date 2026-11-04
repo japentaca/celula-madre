@@ -385,7 +385,7 @@ const Mixer = (() => {
       box.appendChild(el);
     }
     if (chain.length > MAX_INSERTS) {
-      box.title = `La cadena tiene ${chain.length} efectos: la consola muestra los ${MAX_INSERTS} primeros (el resto, en el editor ✎)`;
+      box.title = `La cadena tiene ${chain.length} efectos: la consola muestra los ${MAX_INSERTS} primeros (quitar uno deja ver el siguiente)`;
     } else {
       box.removeAttribute('title');
     }
@@ -495,7 +495,8 @@ const Mixer = (() => {
     fx.params = fx.params || {};
     for (const row of SynthEditor.FX_SCHEMAS[fx.type] || []) {
       body.appendChild(SynthEditor.renderRow(row, fx.params[row.path], value => {
-        // el spec vigente puede haber cambiado de objeto (editor de sintes)
+        // el spec vigente puede haber cambiado de objeto (el editor de sintes
+        // reemplaza settings.edited al tocar el sinte)
         const cur = editableDef(t).chain[slot];
         if (!cur) return;
         cur.params = cur.params || {};
@@ -556,7 +557,7 @@ const Mixer = (() => {
           <select class="mx-preset" title="Instrumento de la pista">${host.presetOptionsHtml(t)}</select>
         </div>
         <div class="mx-row">
-          <button class="mx-edit" title="Editor de sinte y efectos" aria-label="Editar sinte de la pista ${t + 1}">
+          <button class="mx-edit" title="Editor del sinte (los efectos se editan aquí, en Inserts)" aria-label="Editar sinte de la pista ${t + 1}">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.3 1.9l2.8 2.8-8.6 8.6H2.7v-2.8z"/></svg>
           </button>
           <label class="mx-chan" title="Canal MIDI de la pista">ch<select>${chanOptions}</select></label>
@@ -639,8 +640,8 @@ const Mixer = (() => {
     return el;
   }
 
-  // Retorno de un auxiliar: parámetros del bus (los mismos ajustes que el
-  // diálogo Efectos), mute, vúmetro y fader de retorno
+  // Retorno de un auxiliar: parámetros del bus (state.bus de App), mute,
+  // vúmetro y fader de retorno
   function buildReturnStrip(aux) {
     const el = document.createElement('div');
     el.className = 'mx-strip mx-return';
@@ -743,16 +744,11 @@ const Mixer = (() => {
     syncMuteSolo();
   }
 
-  // Ajustes de bus cambiados desde el diálogo Efectos/Salida
+  // Ajustes de bus cambiados fuera de la consola (master en el diálogo
+  // Salida, restauración de ajustes)
   function syncBus() {
     if (!visible) return;
     for (const [key, ctl] of Object.entries(busControls)) ctl.set(host.bus.get(key).value);
-  }
-
-  // La pista cambió fuera de la consola (editor de sintes)
-  function refreshTrack(t) {
-    if (!visible || !strips[t]) return;
-    renderInserts(t);
   }
 
   function setVisible(on) {
@@ -772,5 +768,5 @@ const Mixer = (() => {
     host = callbacks;
   }
 
-  return { init, build, setVisible, syncBus, syncMuteSolo, refreshTrack, isVisible: () => visible };
+  return { init, build, setVisible, syncBus, syncMuteSolo, isVisible: () => visible };
 })();

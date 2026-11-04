@@ -53,8 +53,7 @@ const Visualizer = (() => {
     return container ? container.clientHeight : 400;
   }
 
-  // Las pistas se reparten el alto disponible (mínimo usable con scroll);
-  // el panel lateral se alinea leyendo la variable CSS --track-height.
+  // Las pistas se reparten el alto disponible (mínimo usable con scroll).
   // Si la pieza desborda a lo ancho se reserva el alto de la barra de scroll
   function computeTrackHeight(numTracks, needsHScroll) {
     const avail = containerHeight() - topBar - (needsHScroll ? 17 : 0);
@@ -95,7 +94,6 @@ const Visualizer = (() => {
     const width = Math.max(containerWidth(), headerWidth + piece.totalSteps * cellWidth);
     trackHeight = computeTrackHeight(piece.numTracks, width > containerWidth());
     noteHeight = Math.max(6, Math.min(14, Math.round(trackHeight / 7)));
-    document.documentElement.style.setProperty('--track-height', trackHeight + 'px');
     const height = topBar + piece.numTracks * trackHeight;
 
     cssWidth = width;

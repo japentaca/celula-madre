@@ -122,7 +122,6 @@ option {
 
 /* Botón secundario genérico (diálogos, editor) */
 .btn,
-.fx-add-row button,
 .editor-footer button {
   background: var(--surface-2);
   border: 1px solid var(--line-strong);
@@ -136,7 +135,6 @@ option {
 }
 
 .btn:hover,
-.fx-add-row button:hover,
 .editor-footer button:hover:not(:disabled) {
   background: var(--surface-3);
   border-color: #45454c;
@@ -936,8 +934,7 @@ input[type="checkbox"].rand-toggle:checked::before {
 /* Vista 3D: ocupa el hueco del piano roll; solo uno de los dos es visible */
 #grid-container.hidden,
 #viz3d-container.hidden,
-#mixer-container.hidden,
-#track-panel.hidden {
+#mixer-container.hidden {
   display: none;
 }
 
@@ -986,195 +983,14 @@ input[type="checkbox"].rand-toggle:checked::before {
   border-color: var(--accent-line);
 }
 
-/* ==== Panel de pistas (mezclador) ==== */
-
-#track-panel {
-  width: 272px;
-  flex-shrink: 0;
-  background: var(--surface);
-  border-left: 1px solid var(--line);
-  overflow-y: auto;
-}
-
-/* Alineado con topBar (24px) del visualizador; el alto de tira sigue a
-   --track-height, que el visualizador fija según las pistas generadas */
-#track-panel .panel-spacer {
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--faint);
-  border-bottom: 1px solid var(--line);
-}
-
-.track-strip {
-  height: var(--track-height, 44px);
-  padding: 4px 12px;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 3px;
-  transition: background 0.12s;
-  /* Contenedor de query por altura: los controles se despliegan en pistas altas */
-  container-type: size;
-}
-
-.track-strip:hover {
-  background: var(--surface-2);
-}
-
-.strip-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.strip-num {
-  position: relative;
-  flex: 0 0 auto;
-  width: 18px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--faint);
-}
-
-.track-strip:hover .strip-num {
-  color: var(--muted);
-}
-
+/* Marca de registro de la pista (▾ grave, ▴ aguda, ≋ acordes) junto a su
+   número en la consola */
 .strip-reg {
   position: absolute;
   right: -4px;
   top: -1px;
   font-size: 8px;
   color: var(--muted);
-}
-
-.track-strip select {
-  height: 20px;
-  font-size: 11.5px;
-  padding: 0 20px 0 6px;
-  background-position: right 6px center;
-}
-
-.strip-preset {
-  flex: 1;
-}
-
-.strip-edit {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 20px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.strip-edit svg {
-  width: 11px;
-  height: 11px;
-  fill: currentColor;
-}
-
-.strip-edit:hover {
-  color: var(--accent);
-  border-color: var(--accent-line);
-}
-
-.strip-chan-wrap {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--faint);
-  cursor: help;
-}
-
-/* Canal MIDI: ancho fijo, no compite con el select de preset */
-.strip-chan {
-  width: 42px;
-}
-
-.strip-faders {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0 10px;
-  padding-left: 24px;
-}
-
-.fader {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  cursor: help;
-}
-
-.fader span {
-  flex: 0 0 auto;
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
-.fader input[type="range"] {
-  flex: 1;
-  width: 100%;
-  height: 12px;
-}
-
-.fader input[type="range"]::-webkit-slider-thumb {
-  width: 7px;
-  height: 11px;
-  margin-top: -4px;
-}
-
-.fader input[type="range"]::-moz-range-thumb {
-  width: 7px;
-  height: 11px;
-}
-
-/* Tira alta (pocas pistas): faders en dos columnas, más grandes */
-@container (min-height: 80px) {
-  .strip-faders {
-    margin-top: 4px;
-  }
-  .track-strip select,
-  .strip-edit {
-    height: 24px;
-  }
-  .strip-faders {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px 14px;
-  }
-  .fader span {
-    width: 26px;
-    font-size: 9.5px;
-  }
-  .fader input[type="range"] {
-    height: 16px;
-  }
-  .fader input[type="range"]::-webkit-slider-thumb {
-    width: 9px;
-    height: 14px;
-    margin-top: -5.5px;
-  }
 }
 
 /* ==== Botón «Consola» del topbar: conmutador (aria-pressed) ==== */
@@ -1191,9 +1007,16 @@ input[type="checkbox"].rand-toggle:checked::before {
   transition: color 0.12s, background 0.12s, border-color 0.12s;
 }
 
-.view-btn:hover {
+.view-btn:hover:not(:disabled) {
   color: var(--text);
   background: var(--surface-2);
+}
+
+.view-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: none;
+  color: var(--muted);
 }
 
 .view-btn[aria-pressed="true"] {
@@ -2096,7 +1919,7 @@ input[type="checkbox"].rand-toggle:checked::before {
   position: fixed;
   inset: 0;
   margin: auto;
-  width: min(720px, calc(100vw - 32px));
+  width: min(440px, calc(100vw - 32px));
   height: min(600px, calc(100vh - 48px));
   padding: 0;
   background: var(--surface);
@@ -2119,17 +1942,12 @@ input[type="checkbox"].rand-toggle:checked::before {
 .editor-body {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 1fr;
   overflow: hidden;
 }
 
 .editor-col {
   overflow-y: auto;
   padding: 12px 16px;
-}
-
-.editor-col + .editor-col {
-  border-left: 1px solid var(--line);
 }
 
 .editor-section {
@@ -2183,52 +2001,12 @@ input[type="checkbox"].rand-toggle:checked::before {
   color: var(--text);
 }
 
-.fx-add-row {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.fx-add-row select {
-  flex: 1;
-}
-
-.fx-item {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 8px 10px 4px;
-  margin-bottom: 8px;
-  background: var(--surface-2);
-}
-
-.fx-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.fx-head button {
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 11px;
-}
-
-.fx-head button:hover:not(:disabled) {
-  color: var(--text);
-  background: var(--surface-3);
-}
-
-.fx-head button:disabled {
-  color: var(--line-strong);
-  cursor: default;
+.editor-note {
+  margin: 0;
+  padding: 8px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--faint);
 }
 
 .editor-footer {
@@ -2282,7 +2060,6 @@ input[type="checkbox"].rand-toggle:checked::before {
    la visualización, a pantalla entera y sin puntero */
 body.ui-idle #topbar,
 body.ui-idle #piece-bar,
-body.ui-idle #track-panel,
 body.ui-idle .viz3d-overlay {
   display: none;
 }
