@@ -883,7 +883,11 @@ const App = (() => {
     const tonic = keyName(piece.key + (section.tonic !== undefined ? section.tonic : section.keyOffset));
     const local = section.localScale || piece.scale;
     if (long) return `${tonic} ${optionText('select-scale', local).toLowerCase()}`;
-    return local === piece.scale ? tonic : tonic + (SHORT_MODES[local] || '');
+    // Si alguna sección cambia de modo (relativo, homónimo) todas llevan su
+    // sufijo: con solo las ajenas a la escala de la pieza, Sol# menor y Sol#
+    // mayor se escribían igual («G#») en una pieza menor
+    const mixed = piece.sections.some(sec => (sec.localScale || piece.scale) !== piece.scale);
+    return mixed ? tonic + (SHORT_MODES[local] || '') : tonic;
   }
 
   const ARRIVALS = {
