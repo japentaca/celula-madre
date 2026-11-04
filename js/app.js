@@ -63,8 +63,11 @@ const App = (() => {
   // edited: definición { base, params, chain } del editor de sintes; tiene
   // prioridad sobre preset al configurar el motor y persiste entre generaciones
   const DEFAULT_TRACK_SETTINGS = { preset: 'random', volume: 0.8, reverb: 0.2, delay: 0, pan: 0, panTouched: false, edited: null };
-  // El pad va más bajo y más húmedo: es fondo, no primer plano
-  const DEFAULT_PAD_SETTINGS = { ...DEFAULT_TRACK_SETTINGS, volume: 0.6, reverb: 0.4, midiChannel: 9 };
+  // El pad va más bajo y más húmedo: es fondo, no primer plano. Un acorde de
+  // tres voces suena ~5 dB más que una nota y el balance estéreo de su
+  // chorus otros ~2: 0.35 (−7 dB frente a 0.8) lo deja por debajo de las
+  // melodías
+  const DEFAULT_PAD_SETTINGS = { ...DEFAULT_TRACK_SETTINGS, volume: 0.35, reverb: 0.4, midiChannel: 9 };
   state.padSettings = { ...DEFAULT_PAD_SETTINGS };
   // Probabilidad de pista de acordes con «Acordes tenidos: Aleatoria»
   const PAD_CHANCE = 0.6;
