@@ -11,7 +11,8 @@ Tocar dos archivos:
 
 1. **`js/audio.js`** — añadir una entrada al objeto `PRESETS`: una fábrica sin
    argumentos que devuelve un sinte de Tone.js nuevo en cada llamada.
-   `AudioEngine.PRESETS` (la lista de nombres) y el panel de pistas se derivan
+   `AudioEngine.PRESETS` (la lista de nombres) y el selector de preset de cada
+   canal de la consola se derivan
    solos de las claves del objeto. Añadir también su entrada en `PRESET_TRIMS`
    (dB de compensación de sonoridad): medir el RMS con `Tone.Offline` (notas
    C3/C4/C5, velocity 0.7, igual que los trims existentes) y ajustar hacia el
@@ -50,5 +51,6 @@ reproducción.
 - Escalas: con la skill `test-generator`, comprobar `degreeToMidi` para la
   escala nueva con grados en [-7, 7] y tonalidades 0–11 (MIDI ~24–108),
   incluyendo los `keyOffset` de modulación que suma el compositor.
-- Presets: con la skill `run-app`, elegir el preset en el topbar o en una pista
-  del panel lateral y reproducir; vigilar la consola por errores de retrigger.
+- Presets: con la skill `run-app`, elegir el preset en el topbar o en el selector
+  de un canal de la consola mezcladora (botón Consola o tecla M) y reproducir;
+  vigilar la consola del navegador por errores de retrigger.
