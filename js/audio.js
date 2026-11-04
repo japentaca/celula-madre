@@ -123,8 +123,9 @@ const AudioEngine = (() => {
     return synth;
   }
 
-  // Conecta sinte→cadena de inserción→panner; el paneo va antes del canal y de
-  // los envíos para que reverb y delay conserven la posición estéreo de la pista
+  // Conecta sinte→cadena de inserción→panner; el paneo va antes del canal (y
+  // por tanto de los envíos) para que reverb y delay conserven la posición
+  // estéreo de la pista
   function wireTrack(track) {
     try { track.synth.disconnect(); } catch (e) { /* ignore */ }
     for (const node of track.chain) {
@@ -151,17 +152,16 @@ const AudioEngine = (() => {
 
   // Pistas de la pieza anterior: desecharlas en seco cortaría las colas de
   // release de las últimas notas (y las notas en vuelo si se regenera en plena
-  // reproducción). Se desvanecen canal y envíos y se desechan al terminar
+  // reproducción). Se desvanece el canal (los envíos, post-fader, lo siguen)
+  // y se desechan al terminar
   const RETIRE_FADE = 4;
 
   function retireTrack(track) {
     const now = Tone.now();
-    for (const param of [track.channel.gain, track.revSend.gain, track.delSend.gain]) {
-      try {
-        param.cancelScheduledValues(now);
-        param.rampTo(0, RETIRE_FADE, now);
-      } catch (e) { /* ignore */ }
-    }
+    try {
+      track.channel.gain.cancelScheduledValues(now);
+      track.channel.gain.rampTo(0, RETIRE_FADE, now);
+    } catch (e) { /* ignore */ }
     setTimeout(() => disposeTrack(track), (RETIRE_FADE + 0.5) * 1000);
   }
 
@@ -177,17 +177,20 @@ const AudioEngine = (() => {
       revSend.connect(reverb);
       const delSend = new Tone.Gain(cfg.delay);
       delSend.connect(delay);
+      // Envíos post-fader: cuelgan del canal, así que el volumen de la pista
+      // escala también lo que manda a reverb y delay (fader a 0 = pista muda,
+      // sin efecto suelto)
+      channel.connect(revSend);
+      channel.connect(delSend);
       const panner = new Tone.Panner(cfg.pan || 0);
       panner.connect(channel);
-      panner.connect(revSend);
-      panner.connect(delSend);
       const track = {
         synth: makeSynth(cfg.preset),
         presetName: typeof cfg.preset === 'string' ? cfg.preset : cfg.preset.base,
         chain: buildChain(cfg.preset),
         panner, channel, revSend, delSend,
-        // Niveles del usuario: fadeOutTracks los baja y restoreTrackLevels
-        // vuelve a ellos
+        // Niveles del usuario: fadeOutTracks baja el canal y
+        // restoreTrackLevels vuelve a su nivel
         levels: { channel: cfg.volume, revSend: cfg.reverb, delSend: cfg.delay },
         faded: false
       };
@@ -249,7 +252,9 @@ const AudioEngine = (() => {
     const track = tracks[index];
     if (!track) return;
     track.levels[node] = value;
-    if (!track.faded) track[node].gain.value = value;
+    // Durante la coda el canal está en rampa a 0: su nivel se repone al
+    // reanudar. Los envíos no se desvanecen y se aplican en el acto
+    if (!track.faded || node !== 'channel') track[node].gain.value = value;
   }
 
   function setTrackVolume(index, value) {
@@ -264,21 +269,18 @@ const AudioEngine = (() => {
     setTrackLevel(index, 'delSend', value);
   }
 
-  const LEVEL_NODES = ['channel', 'revSend', 'delSend'];
-
-  // Coda del final de pieza: baja canal y envíos de cada pista; los buses de
-  // reverb y delay siguen y dejan su cola natural
+  // Coda del final de pieza: baja el canal de cada pista (los envíos,
+  // post-fader, lo siguen sin atenuarse dos veces); los buses de reverb y
+  // delay siguen y dejan su cola natural
   function fadeOutTracks(time, seconds) {
     for (const track of tracks) {
       track.faded = true;
-      for (const node of LEVEL_NODES) {
-        try {
-          const gain = track[node].gain;
-          gain.cancelScheduledValues(time);
-          gain.setValueAtTime(gain.getValueAtTime(time), time);
-          gain.linearRampToValueAtTime(0, time + seconds);
-        } catch (e) { /* ignore */ }
-      }
+      try {
+        const gain = track.channel.gain;
+        gain.cancelScheduledValues(time);
+        gain.setValueAtTime(gain.getValueAtTime(time), time);
+        gain.linearRampToValueAtTime(0, time + seconds);
+      } catch (e) { /* ignore */ }
     }
   }
 
@@ -287,13 +289,11 @@ const AudioEngine = (() => {
     for (const track of tracks) {
       if (!track.faded) continue;
       track.faded = false;
-      for (const node of LEVEL_NODES) {
-        try {
-          const gain = track[node].gain;
-          gain.cancelScheduledValues(at);
-          gain.rampTo(track.levels[node], 0.05, at);
-        } catch (e) { /* ignore */ }
-      }
+      try {
+        const gain = track.channel.gain;
+        gain.cancelScheduledValues(at);
+        gain.rampTo(track.levels.channel, 0.05, at);
+      } catch (e) { /* ignore */ }
     }
   }
 
