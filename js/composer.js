@@ -348,13 +348,23 @@ const Composer = (() => {
   // al registro del carácter. Así las modulaciones reales no arrastran la
   // melodía de un tirón de 7 semitonos y la vuelta de A, en la tónica, cae
   // siempre en su registro de exposición. Se fija al componer: retune
-  // conserva las octavas (re-describe shift, así que ida y vuelta es exacta)
+  // conserva las octavas (re-describe shift, así que ida y vuelta es exacta).
+  // Límites audibles: el percentil REGISTER_LOW_Q de las notas de la sección
+  // (con la tonalidad real) no baja de REGISTER_FLOOR ni el REGISTER_HIGH_Q
+  // pasa de REGISTER_CEIL. Sin ellos, carácter sombrío (−1 octava) + transporte
+  // de la modulación real (hasta −6) + tónica grave dejaban frases enteras por
+  // debajo de Do2, inaudibles con un sinte senoidal en altavoces normales
   const REGISTER_WINDOW = 8;
   const REGISTER_MAX = 17;
   const REGISTER_PULL = 0.5;
-  function planRegister(sections, motifs, scale, modulation) {
-    const content = sections.map(section => {
+  const REGISTER_FLOOR = 48;
+  const REGISTER_CEIL = 93;
+  const REGISTER_LOW_Q = 0.1;
+  const REGISTER_HIGH_Q = 0.9;
+  function planRegister(sections, motifs, scale, key, modulation) {
+    const stats = sections.map(section => {
       const local = modulation === 'real' ? section.localScale : scale;
+      const notes = [];
       let sum = 0;
       let count = 0;
       section.trackBlocks.forEach(blocks => {
@@ -363,17 +373,27 @@ const Composer = (() => {
           if (block.motifIndex === null) continue;
           for (const step of motifs[block.motifIndex]) {
             if (!step.note) continue;
-            sum += (Generator.degreeToMidi(step.degree, local, 0) - 60) * block.repeats;
+            const midi = Generator.degreeToMidi(step.degree, local, key);
+            sum += (midi - key - 60) * block.repeats;
             count += block.repeats;
+            notes.push(midi);
           }
         }
       });
-      return count ? sum / count : 0;
+      notes.sort((a, b) => a - b);
+      const q = f => (notes.length ? notes[Math.min(notes.length - 1, Math.floor(f * notes.length))] : 60 + key);
+      return { mean: count ? sum / count : 0, low: q(REGISTER_LOW_Q), high: q(REGISTER_HIGH_Q) };
     });
-    const options = sections.map(section => {
+    const content = stats.map(st => st.mean);
+    const options = sections.map((section, i) => {
       const shift = modulation === 'real' ? section.shift : 0;
       const target = 12 * section.character.register;
-      const all = [-2, -1, 0, 1, 2].map(k => ({ k, T: shift + 12 * k })).filter(o => Math.abs(o.T) <= REGISTER_MAX);
+      const { low, high } = stats[i];
+      const range = [-2, -1, 0, 1, 2].map(k => ({ k, T: shift + 12 * k })).filter(o => Math.abs(o.T) <= REGISTER_MAX);
+      const audible = range.filter(o => low + o.T >= REGISTER_FLOOR && high + o.T <= REGISTER_CEIL);
+      // Si ninguna octava cabe entera, la que menos se sale por abajo o por arriba
+      const overflow = o => Math.max(0, REGISTER_FLOOR - low - o.T) + Math.max(0, high + o.T - REGISTER_CEIL);
+      const all = audible.length ? audible : [range.reduce((a, b) => (overflow(b) < overflow(a) ? b : a))];
       const near = all.filter(o => Math.abs(o.T - target) <= REGISTER_WINDOW);
       return near.length ? near : [all.reduce((a, b) => (Math.abs(b.T - target) < Math.abs(a.T - target) ? b : a))];
     });
@@ -468,7 +488,7 @@ const Composer = (() => {
     // (keyOffset y mode), lo que hace retune-safe la modulación
     planTonality(sections, scale, modulation, form);
     // Registro por sección (octava del transporte) según carácter y continuidad
-    planRegister(sections, motifs, scale, modulation);
+    planRegister(sections, motifs, scale, key, modulation);
     for (const section of sections) {
       for (let t = 0; t < numTracks; t++) {
         const blocks = section.trackBlocks[t];

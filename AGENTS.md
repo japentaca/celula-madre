@@ -244,7 +244,10 @@ plan armónico (`Harmony.plan` + `Harmony.spell`) → `Humanizer` → `Energy` �
   transporte efectivo T = `shift` (solo con modulación real) + 12·`octave` se
   elige por programación dinámica sobre la pieza entera entre las octavas
   que dejan T a ≤ `REGISTER_WINDOW` (8) semitonos de 12·`character.register`
-  y con |T| ≤ 17, minimizando el salto de altura media entre secciones
+  y con |T| ≤ 17 — y, antes que eso, que dejan la sección audible: el
+  percentil 10 de sus notas (con la tonalidad real) ≥ `REGISTER_FLOOR` (48,
+  Do3) y el 90 ≤ `REGISTER_CEIL` (93); sin ese suelo, sombrío + transporte
+  de la modulación + tónica grave hundían frases enteras bajo Do2 —, minimizando el salto de altura media entre secciones
   consecutivas (contenido de la letra, en la escala local, + T, descontado el
   cambio deliberado de registro entre caracteres) más `REGISTER_PULL` (0.5) ×
   la distancia al registro del carácter. Así una modulación real no arrastra
