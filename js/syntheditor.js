@@ -150,6 +150,9 @@ const SynthEditor = (() => {
     BitCrusher: [
       { path: 'bits', label: 'Bits', min: 1, max: 12, step: 1 },
       { path: 'wet', label: 'Mezcla', min: 0, max: 1 }
+    ],
+    StereoWidener: [
+      { path: 'width', label: 'Anchura', min: 0, max: 1 }
     ]
   };
 
@@ -161,7 +164,8 @@ const SynthEditor = (() => {
     Tremolo: { frequency: 4, depth: 0.6, wet: 1 },
     Vibrato: { frequency: 5, depth: 0.15, wet: 1 },
     Distortion: { distortion: 0.3, oversample: '2x', wet: 0.5 },
-    BitCrusher: { bits: 6, wet: 0.4 }
+    BitCrusher: { bits: 6, wet: 0.4 },
+    StereoWidener: { width: 0.65 }
   };
 
   let root = null;

@@ -153,6 +153,15 @@
         <span class="dialog-val"></span>
       </div>
       <div class="dialog-row">
+        <label title="Añade una pista más que sostiene los acordes del plan armónico (pads, cuerdas) con conducción de voces, por debajo de las melodías: entra tras la primera frase, acompaña con acordes ligados en los caracteres lírico, sombrío y en la exposición, y los ataca más cortos en los agitados y brillantes. Necesita un sinte polifónico (Cuerdas o Pad etéreo si su preset es aleatorio). Se aplica al generar; en la escala cromática no hay plan armónico ni pista de acordes. Aleatoria: en el 60 % de las piezas">Acordes tenidos</label>
+        <select id="select-pad">
+          <option value="on">Sí</option>
+          <option value="off">No</option>
+          <option value="random" selected>Aleatoria</option>
+        </select>
+        <span class="dialog-val"></span>
+      </div>
+      <div class="dialog-row">
         <label>Preset</label>
         <select id="select-preset">
           <option value="random" selected>Aleatorio (por pista)</option>
@@ -169,6 +178,7 @@
           <option value="Marimba">Marimba</option>
           <option value="Organ">Órgano</option>
           <option value="Pad">Pad etéreo</option>
+          <option value="Strings">Cuerdas</option>
           <option value="Supersaw">Supersaw</option>
         </select>
         <span class="dialog-val"></span>
@@ -297,6 +307,7 @@
         <a href="#g-recap">Recapitulación</a>
         <a href="#g-tonal">Plan tonal</a>
         <a href="#g-harmony">Armonía</a>
+        <a href="#g-pad">Acordes tenidos</a>
         <a href="#g-passes">Pases</a>
         <a href="#g-end">Duraciones y final</a>
         <a href="#g-you">Lo que controlas</a>
@@ -586,6 +597,32 @@
           </ul>
         </section>
 
+        <section id="g-pad">
+          <h3>Acordes tenidos</h3>
+          <p>Con «Acordes tenidos» (diálogo Generación) la pieza lleva una pista más,
+          marcada con ≋, que no toca motivos: sostiene los acordes del plan armónico,
+          como un colchón de cuerdas o un pad. Se compone al final, sobre las melodías
+          ya acabadas, y ningún pase la toca.</p>
+          <ul>
+            <li><b>Conducción de voces:</b> tres voces en registro medio-grave (Do3–Re5),
+            por debajo de las melodías. El primer acorde va en posición fundamental y
+            cada uno de los siguientes elige la disposición que menos mueve las voces;
+            las notas comunes se ligan, sin volver a atacarse.</li>
+            <li><b>Cuándo suena:</b> la exposición arranca con el material solo y el pad
+            entra tras su primera frase. En la exposición y en los caracteres lírico y
+            sombrío sostiene cada acorde entero; en los agitados y brillantes lo ataca y
+            lo suelta a la blanca, salvo en la retransición, donde mantiene la
+            dominante. El acorde final se prolonga durante la coda.</li>
+            <li><b>Dinámica:</b> sigue el nivel del plan formal (carácter, clímax y la
+            rampa de la retransición), siempre por debajo de las melodías.</li>
+            <li><b>Sin choques:</b> si una melodía deja en tiempo fuerte una nota a un
+            semitono o un tritono de una voz del pad, esa voz calla en ese acorde.</li>
+            <li><b>Sonido:</b> necesita un sinte polifónico. Con instrumento aleatorio
+            sortea entre Cuerdas y Pad etéreo, va centrada, algo más baja y con más
+            reverb, y guarda sus ajustes aparte de las pistas melódicas.</li>
+          </ul>
+        </section>
+
         <section id="g-passes">
           <h3>Pases de acabado</h3>
           <p>Con la rejilla de notas ya colocada, cuatro pases la retocan en este
@@ -641,7 +678,8 @@
           <h3>Lo que controlas</h3>
           <ul>
             <li><b>Generación:</b> pistas, duración y tempo (fijos o al azar dentro de
-            un rango), contornos permitidos, forma, modulación, escala y tonalidad.</li>
+            un rango), contornos permitidos, forma, modulación, acordes tenidos, escala
+            y tonalidad.</li>
             <li><b>Escala y tonalidad en vivo:</b> como la pieza guarda grados y no
             notas, cambiarlas re-afina la pieza en curso sin recomponerla — también
             mientras suena.</li>
@@ -687,6 +725,7 @@
   <script src="js/generator.js"></script>
   <script src="js/form.js"></script>
   <script src="js/harmony.js"></script>
+  <script src="js/pad.js"></script>
   <script src="js/humanizer.js"></script>
   <script src="js/energy.js"></script>
   <script src="js/counterpoint.js"></script>

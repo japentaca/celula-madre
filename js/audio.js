@@ -80,7 +80,19 @@ const AudioEngine = (() => {
         envelope: { attack: 0.06, decay: 0.4, sustain: 0.7, release: 2.5 } },
       chain: [
         { type: 'AutoFilter', params: { frequency: 0.15, baseFrequency: 300, octaves: 3, depth: 0.6, wet: 1 } },
-        { type: 'Chorus', params: { frequency: 0.8, delayTime: 4, depth: 0.6, wet: 0.5 } }
+        { type: 'Chorus', params: { frequency: 0.5, delayTime: 4, depth: 0.4, wet: 0.35 } },
+        { type: 'StereoWidener', params: { width: 0.62 } }
+      ] },
+    // Cuerdas: sierras desafinadas polifónicas, ataque lento y cola larga,
+    // paso bajo para que no tapen las melodías. Pensadas para la pista de
+    // acordes tenidos (Pad), que necesita polifonía
+    Strings: { label: 'Cuerdas', base: 'SynthPair',
+      params: { volume: 0, oscillator: { type: 'fatsawtooth', count: 3, spread: 18 },
+        envelope: { attack: 0.5, decay: 0.6, sustain: 0.85, release: 2.8 } },
+      chain: [
+        { type: 'Filter', params: { type: 'lowpass', frequency: 1400, Q: 0.5 } },
+        { type: 'Chorus', params: { frequency: 0.4, delayTime: 3.5, depth: 0.35, wet: 0.35 } },
+        { type: 'StereoWidener', params: { width: 0.62 } }
       ] },
     Supersaw: { label: 'Supersaw', base: 'Synth',
       params: { volume: 2, oscillator: { type: 'fatsawtooth' },
@@ -100,6 +112,10 @@ const AudioEngine = (() => {
   // la sierra filtrada y la FM se oyen por sus armónicos aunque falte la
   // fundamental. App solo los impone cuando el preset de la pista es aleatorio
   const BASS_PRESETS = ['MonoSynth', 'FMSynth', 'DuoSynth'];
+
+  // Presets polifónicos para la pista de acordes tenidos (Pad): App los
+  // sortea para ella cuando su preset es aleatorio
+  const PAD_PRESETS = ['Strings', 'Pad'];
 
   // Definición { base, params, chain } de un nombre de fábrica (motor o voz),
   // copia nueva en cada llamada para que el editor pueda modificarla
@@ -123,8 +139,16 @@ const AudioEngine = (() => {
     Tremolo: opts => new Tone.Tremolo(opts),
     Vibrato: opts => new Tone.Vibrato(opts),
     Distortion: opts => new Tone.Distortion(opts),
-    BitCrusher: opts => new Tone.BitCrusher(opts)
+    BitCrusher: opts => new Tone.BitCrusher(opts),
+    // Ensanchador estéreo (mid/side): 0.5 deja la imagen igual, más abre los
+    // lados y baja el centro. Solo actúa sobre una señal ya estéreo (tras un
+    // chorus): una mono no tiene lados que abrir
+    StereoWidener: opts => new Tone.StereoWidener(opts)
   };
+
+  // Efectos que convierten la señal en estéreo: con alguno en la cadena el
+  // paneo de la pista pasa a balance estéreo (wireTrack)
+  const STEREO_EFFECTS = new Set(['Chorus', 'Phaser', 'Tremolo', 'StereoWidener']);
 
   function makeEffect(spec) {
     const factory = EFFECTS[spec.type];
@@ -205,7 +229,14 @@ const AudioEngine = (() => {
       prev.connect(node);
       prev = node;
     }
-    prev.connect(track.panner);
+    // Tone.Panner trabaja en mono por defecto (channelCount 1) y plegaba a
+    // mono lo que un chorus abre en estéreo. Con un efecto estéreo en la
+    // cadena pasa a balance de dos canales; en el centro eso suena 3 dB más
+    // que el paneo mono, y stereoTrim lo compensa
+    const stereo = track.chain.some(node => STEREO_EFFECTS.has(node.name));
+    track.panner.channelCount = stereo ? 2 : 1;
+    track.stereoTrim.gain.value = stereo ? Math.SQRT1_2 : 1;
+    prev.connect(track.stereoTrim);
   }
 
   function disposeTrack(track) {
@@ -213,6 +244,7 @@ const AudioEngine = (() => {
     for (const node of track.chain) {
       try { node.dispose(); } catch (e) { /* ignore */ }
     }
+    try { track.stereoTrim.dispose(); } catch (e) { /* ignore */ }
     try { track.panner.dispose(); } catch (e) { /* ignore */ }
     try { track.channel.dispose(); } catch (e) { /* ignore */ }
     try { track.revSend.dispose(); } catch (e) { /* ignore */ }
@@ -253,11 +285,13 @@ const AudioEngine = (() => {
       channel.connect(delSend);
       const panner = new Tone.Panner(cfg.pan || 0);
       panner.connect(channel);
+      const stereoTrim = new Tone.Gain(1);
+      stereoTrim.connect(panner);
       const track = {
         synth: makeSynth(cfg.preset),
         presetName: typeof cfg.preset === 'string' ? cfg.preset : cfg.preset.base,
         chain: buildChain(cfg.preset),
-        panner, channel, revSend, delSend,
+        panner, stereoTrim, channel, revSend, delSend,
         // Niveles del usuario: fadeOutTracks baja el canal y
         // restoreTrackLevels vuelve a su nivel
         levels: { channel: cfg.volume, revSend: cfg.reverb, delSend: cfg.delay },
@@ -456,6 +490,7 @@ const AudioEngine = (() => {
     SYNTH_TYPES: Object.keys(PRESETS),
     PRESETS: Object.keys(PRESETS).concat(Object.keys(VOICES)),
     BASS_PRESETS,
+    PAD_PRESETS,
     presetDef,
     presetLabel,
     DELAY_SUBDIVISIONS,

@@ -75,8 +75,10 @@ const Visualizer = (() => {
     for (const row of grid) {
       for (const cell of row) {
         if (!cell) continue;
-        if (cell.midi < min) min = cell.midi;
-        if (cell.midi > max) max = cell.midi;
+        for (const note of cell.voices || [cell]) {
+          if (note.midi < min) min = note.midi;
+          if (note.midi > max) max = note.midi;
+        }
       }
     }
     if (min === Infinity) { min = 60; max = 72; }
@@ -174,25 +176,29 @@ const Visualizer = (() => {
 
       const row = piece.grid[t];
       for (let s = 0; s < piece.totalSteps; s++) {
-        const cell = row[s];
-        if (!cell) continue;
-        const x = headerWidth + s * cellWidth;
-        const norm = (cell.midi - range.min) / (range.max - range.min);
-        const ny = y + (trackHeight - noteHeight - 2) * (1 - norm) + 1;
-        const brightness = 0.4 + 0.6 * cell.velocity;
-        const color = MOTIF_COLORS[(cell.motifIndex || 0) % MOTIF_COLORS.length];
-        const r = Math.floor(color[0] * brightness);
-        const gg = Math.floor(color[1] * brightness);
-        const b = Math.floor(color[2] * brightness);
-        g.fillStyle = `rgb(${r},${gg},${b})`;
-        const noteWidth = Math.max((cell.durationSteps || 1) * cellWidth - 1, 2);
-        g.fillRect(x, ny, noteWidth, noteHeight);
+        if (!row[s]) continue;
+        // pista de acordes (Pad): todas sus voces atacadas; las ligadas ya
+        // las dibuja la voz que sostienen
+        const notes = row[s].voices ? row[s].voices.filter(v => !v.tied) : [row[s]];
+        for (const cell of notes) {
+          const x = headerWidth + s * cellWidth;
+          const norm = (cell.midi - range.min) / (range.max - range.min);
+          const ny = y + (trackHeight - noteHeight - 2) * (1 - norm) + 1;
+          const brightness = 0.4 + 0.6 * cell.velocity;
+          const color = MOTIF_COLORS[(cell.motifIndex || 0) % MOTIF_COLORS.length];
+          const r = Math.floor(color[0] * brightness);
+          const gg = Math.floor(color[1] * brightness);
+          const b = Math.floor(color[2] * brightness);
+          g.fillStyle = `rgb(${r},${gg},${b})`;
+          const noteWidth = Math.max((cell.durationSteps || 1) * cellWidth - 1, 2);
+          g.fillRect(x, ny, noteWidth, noteHeight);
+        }
       }
 
       g.fillStyle = FAINT;
       g.font = `10px ${MONO}`;
       g.textAlign = 'right';
-      g.fillText(String(t + 1).padStart(2, '0'), headerWidth - 10, y + trackHeight / 2 + 3);
+      g.fillText(String(t + 1).padStart(2, '0') + (t === piece.padTrack ? '≋' : ''), headerWidth - 10, y + trackHeight / 2 + 3);
     }
 
     // Límite izquierdo de cada bloque dentro de su pista

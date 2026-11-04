@@ -18,6 +18,7 @@ const fs = require('fs');
 eval(fs.readFileSync('js/generator.js', 'utf8') + ';globalThis.Generator = Generator;');
 eval(fs.readFileSync('js/form.js', 'utf8') + ';globalThis.FormPlan = FormPlan;');
 eval(fs.readFileSync('js/harmony.js', 'utf8') + ';globalThis.Harmony = Harmony;');
+eval(fs.readFileSync('js/pad.js', 'utf8') + ';globalThis.Pad = Pad;');
 eval(fs.readFileSync('js/humanizer.js', 'utf8') + ';globalThis.Humanizer = Humanizer;');
 eval(fs.readFileSync('js/energy.js', 'utf8') + ';globalThis.Energy = Energy;');
 eval(fs.readFileSync('js/counterpoint.js', 'utf8') + ';globalThis.Counterpoint = Counterpoint;');

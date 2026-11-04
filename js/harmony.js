@@ -517,7 +517,8 @@ const Harmony = (() => {
     for (const row of ctx.grid) {
       for (let s = 0; s < row.length; s++) {
         const cell = row[s];
-        if (!cell) continue;
+        // las voces del pad llevan su propia alteración (Pad.refresh)
+        if (!cell || cell.pad) continue;
         const before = cell.midi;
         setPitch(ctx, s, cell, cell.degree);
         if (cell.midi !== before) changed++;

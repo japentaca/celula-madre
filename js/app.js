@@ -5,6 +5,10 @@ const App = (() => {
     trackSettings: [],
     // Preset efectivo de cada pista en la pieza actual (resuelto cuando la elección es aleatoria)
     resolvedPresets: [],
+    // Pista de acordes tenidos (Pad, piece.padTrack): sus ajustes y su preset
+    // resuelto van aparte, porque su índice cambia con el número de pistas
+    padSettings: null,
+    padResolved: null,
     // Vista activa de la grilla ('2d' | 'city' | 'tunnel' | 'terrain' | 'stars' | 'musicbox' | 'fifths' | 'pianola' | 'loom' | 'strings' | 'galaxy' | 'garden' | 'swarm' | 'mobius') y último paso del
     // cursor, para reponerlo al conmutar de vista en plena reproducción
     view: '2d',
@@ -59,6 +63,11 @@ const App = (() => {
   // edited: definición { base, params, chain } del editor de sintes; tiene
   // prioridad sobre preset al configurar el motor y persiste entre generaciones
   const DEFAULT_TRACK_SETTINGS = { preset: 'random', volume: 0.8, reverb: 0.2, delay: 0, pan: 0, panTouched: false, edited: null };
+  // El pad va más bajo y más húmedo: es fondo, no primer plano
+  const DEFAULT_PAD_SETTINGS = { ...DEFAULT_TRACK_SETTINGS, volume: 0.6, reverb: 0.4, midiChannel: 9 };
+  state.padSettings = { ...DEFAULT_PAD_SETTINGS };
+  // Probabilidad de pista de acordes con «Acordes tenidos: Aleatoria»
+  const PAD_CHANCE = 0.6;
 
   // ---- Persistencia de ajustes (localStorage) ----
   // Todo cambio de la UI (topbar, diálogos, panel de pistas y editor de sintes)
@@ -89,7 +98,9 @@ const App = (() => {
         revdecay: document.getElementById('slider-revdecay').value
       },
       trackSettings: state.trackSettings,
-      resolvedPresets: state.resolvedPresets
+      resolvedPresets: state.resolvedPresets,
+      padSettings: state.padSettings,
+      padResolved: state.padResolved
     };
   }
 
@@ -126,7 +137,7 @@ const App = (() => {
     v: 1,
     ui: {
       tempo: 96, numTracks: 6, duration: 8, preset: 'random', scale: 'random', contours: [],
-      key: 'random', formChoice: 'random', modulation: 'real', autogen: true, autorestart: true, kiosk: false,
+      key: 'random', formChoice: 'random', modulation: 'real', pad: 'random', autogen: true, autorestart: true, kiosk: false,
       view: 'mobius',
       tracksRandom: true, tracksRange: [4, 7],
       durationRandom: true, durationRange: [2, 4],
@@ -198,6 +209,8 @@ const App = (() => {
     setControl('select-form', ui.formChoice, 'change');
     // Ajustes guardados antes del selector no lo traen: queda «Real» (HTML)
     setControl('select-modulation', ui.modulation, 'change');
+    // Ajustes guardados antes del selector no lo traen: queda «Aleatoria» (HTML)
+    if (ui.pad) setControl('select-pad', ui.pad, 'change');
     setControl('checkbox-autogen', ui.autogen, 'change');
     setControl('checkbox-autorestart', ui.autorestart, 'change');
     setControl('checkbox-kiosk', ui.kiosk, 'change');
@@ -237,6 +250,15 @@ const App = (() => {
       });
       state.resolvedPresets = (Array.isArray(saved.resolvedPresets) ? saved.resolvedPresets : [])
         .map(p => (p && p.startsWith(SynthEditor.USER_PREFIX) && !valid.has(p) ? null : p));
+    }
+    if (saved.padSettings) {
+      const valid = new Set(SynthEditor.getUserPresetNames().map(n => SynthEditor.USER_PREFIX + n));
+      state.padSettings = { ...DEFAULT_PAD_SETTINGS, ...saved.padSettings };
+      if (state.padSettings.preset.startsWith(SynthEditor.USER_PREFIX) && !valid.has(state.padSettings.preset)) {
+        state.padSettings.preset = 'random';
+      }
+      const r = saved.padResolved;
+      state.padResolved = r && !(r.startsWith(SynthEditor.USER_PREFIX) && !valid.has(r)) ? r : null;
     }
   }
 
@@ -311,9 +333,10 @@ const App = (() => {
   // Reparte las pistas por el espectro estéreo: T1 a la izquierda, la última a la derecha
   // Reparto estéreo estándar: la pista grave (registro −1 de la pieza) al
   // centro y las demás abiertas de izquierda a derecha en orden de pista
-  function spreadPan(trackIndex, registers) {
-    if (registers[trackIndex] < 0) return 0;
-    const others = registers.map((r, t) => t).filter(t => registers[t] >= 0);
+  // y el pad (padTrack) también al centro
+  function spreadPan(trackIndex, registers, padTrack = -1) {
+    if (registers[trackIndex] < 0 || trackIndex === padTrack) return 0;
+    const others = registers.map((r, t) => t).filter(t => registers[t] >= 0 && t !== padTrack);
     if (others.length <= 1) return 0;
     const maxSpread = 0.85;
     return -maxSpread + (2 * maxSpread * others.indexOf(trackIndex)) / (others.length - 1);
@@ -341,6 +364,8 @@ const App = (() => {
       // 'real', 'soft', 'none' (Generator.MODULATIONS) o 'random'; rige desde la
       // próxima generación
       modulation: document.getElementById('select-modulation').value,
+      // pista de acordes tenidos: 'on', 'off' o 'random' (PAD_CHANCE)
+      pad: document.getElementById('select-pad').value,
       autogen: document.getElementById('checkbox-autogen').checked,
       autorestart: document.getElementById('checkbox-autorestart').checked,
       kiosk: document.getElementById('checkbox-kiosk').checked,
@@ -570,6 +595,14 @@ const App = (() => {
   // usuario vuelve a elegir "Aleatorio" en el panel, o si a la pista le toca
   // el registro grave y lo sorteado no es de AudioEngine.BASS_PRESETS
   function resolvePreset(trackIndex, ui) {
+    // El pad necesita un sinte polifónico: el preset global no le aplica y,
+    // en aleatorio, sortea entre AudioEngine.PAD_PRESETS
+    if (isPadTrack(trackIndex)) {
+      const pad = state.padSettings;
+      if (pad.preset !== 'random') return pad.preset;
+      const kept = state.padResolved;
+      return AudioEngine.PAD_PRESETS.includes(kept) ? kept : Generator.pickRandom(AudioEngine.PAD_PRESETS);
+    }
     const settings = state.trackSettings[trackIndex];
     if (settings.preset !== 'random') return settings.preset;
     if (ui.preset !== 'random') return ui.preset;
@@ -580,6 +613,24 @@ const App = (() => {
     return kept || Generator.pickRandom(AudioEngine.PRESETS);
   }
 
+  function isPadTrack(trackIndex) {
+    return !!state.piece && state.piece.padTrack === trackIndex;
+  }
+  function settingsOf(trackIndex) {
+    return isPadTrack(trackIndex) ? state.padSettings : state.trackSettings[trackIndex];
+  }
+  function resolvedOf(trackIndex) {
+    return isPadTrack(trackIndex) ? state.padResolved : state.resolvedPresets[trackIndex];
+  }
+  function setResolved(trackIndex, name) {
+    if (isPadTrack(trackIndex)) state.padResolved = name;
+    else state.resolvedPresets[trackIndex] = name;
+  }
+  function randomPresetFor(trackIndex) {
+    if (isPadTrack(trackIndex)) return Generator.pickRandom(AudioEngine.PAD_PRESETS);
+    return Generator.pickRandom(isBassTrack(trackIndex) ? AudioEngine.BASS_PRESETS : AudioEngine.PRESETS);
+  }
+
   function isBassTrack(trackIndex) {
     const regs = state.piece && state.piece.trackRegisters;
     return !!regs && regs[trackIndex] < 0;
@@ -587,7 +638,7 @@ const App = (() => {
 
   // Forma que entiende AudioEngine: definición editada > preset de usuario > nombre de fábrica
   function toEnginePreset(trackIndex, name) {
-    const settings = state.trackSettings[trackIndex];
+    const settings = settingsOf(trackIndex);
     if (settings.edited) return settings.edited;
     if (name.startsWith(SynthEditor.USER_PREFIX)) return SynthEditor.getUserPreset(name) || name;
     return name;
@@ -640,21 +691,25 @@ const App = (() => {
       scale: Generator.resolveScale(ui.scale),
       key: Generator.resolveKey(ui.key),
       repeatsByLetter: plan.repeats,
-      modulation: Generator.resolveModulation(ui.modulation)
+      modulation: Generator.resolveModulation(ui.modulation),
+      pad: ui.pad === 'random' ? Math.random() < PAD_CHANCE : ui.pad === 'on'
     });
+    // con pista de acordes, piece.numTracks la cuenta (numTracks son las melódicas)
+    const allTracks = state.piece.numTracks;
     const configs = [];
     const resolved = [];
-    for (let t = 0; t < numTracks; t++) {
+    for (let t = 0; t < allTracks; t++) {
       const preset = resolvePreset(t, ui);
-      const settings = state.trackSettings[t];
+      const settings = settingsOf(t);
       // el reparto estéreo se recalcula salvo que el usuario haya movido el paneo a mano
-      if (!settings.panTouched) settings.pan = spreadPan(t, state.piece.trackRegisters);
-      resolved.push(preset);
+      if (!settings.panTouched) settings.pan = spreadPan(t, state.piece.trackRegisters, state.piece.padTrack);
+      if (isPadTrack(t)) state.padResolved = preset;
+      else resolved.push(preset);
       configs.push({ preset: toEnginePreset(t, preset), volume: settings.volume, reverb: settings.reverb, delay: settings.delay, pan: settings.pan });
     }
     state.resolvedPresets = resolved;
     AudioEngine.setupTracks(configs);
-    MidiEngine.setTrackChannels(state.trackSettings.slice(0, numTracks).map(s => s.midiChannel));
+    MidiEngine.setTrackChannels(Array.from({ length: allTracks }, (_, t) => settingsOf(t).midiChannel));
 
     updateRandomTonalityLabels();
     // El cursor de una pausa previa no vale para la pieza nueva (compose
@@ -666,13 +721,13 @@ const App = (() => {
     const contourInfo = extraContours.length ? `${motherCell.contour} (variaciones: ${extraContours.join(', ')})` : motherCell.contour;
     const tonalPlan = state.piece.sections.map(s => sectionKeyName(state.piece, s)).join(' → ');
     const characters = state.piece.sections.map(s => `${s.label}:${s.character ? s.character.name : '?'}${s.climax ? '*' : ''}`).join(' ');
-    console.log(`Pieza generada — ${numTracks} pistas, ${formatTime(state.piece.totalSteps * 15 / bpm)} (objetivo ${minutes} min), célula de ${cellLength} pasos, ♩=${bpm}, contorno: ${contourInfo}, forma: ${formStr}, ${optionText('select-key', state.piece.key)} ${optionText('select-scale', state.piece.scale)}, plan tonal (${state.piece.modulation}): ${tonalPlan}, carácter (* clímax): ${characters}`);
+    console.log(`Pieza generada — ${numTracks} pistas${state.piece.padTrack >= 0 ? ' + acordes' : ''}, ${formatTime(state.piece.totalSteps * 15 / bpm)} (objetivo ${minutes} min), célula de ${cellLength} pasos, ♩=${bpm}, contorno: ${contourInfo}, forma: ${formStr}, ${optionText('select-key', state.piece.key)} ${optionText('select-scale', state.piece.scale)}, plan tonal (${state.piece.modulation}): ${tonalPlan}, carácter (* clímax): ${characters}`);
 
     lastShownSecond = -1;
     renderPieceBar();
     vizRender();
-    buildTrackPanel(numTracks);
-    SynthEditor.ensureValid(numTracks);
+    buildTrackPanel(allTracks);
+    SynthEditor.ensureValid(allTracks);
     // los presets sorteados forman parte de lo que se restaura al recargar
     scheduleSave();
   }
@@ -687,7 +742,8 @@ const App = (() => {
   function updateRandomTonalityLabels() {
     const piece = state.piece;
     const pairs = [['select-scale', piece && piece.scale], ['select-key', piece && piece.key],
-      ['select-modulation', piece && piece.modulation]];
+      ['select-modulation', piece && piece.modulation],
+      ['select-pad', piece && (piece.padTrack >= 0 ? 'on' : 'off')]];
     for (const [id, value] of pairs) {
       const opt = document.querySelector(`#${id} option[value="random"]`);
       if (opt) opt.textContent = piece ? `Aleatoria (${optionText(id, value)})` : 'Aleatoria';
@@ -695,7 +751,7 @@ const App = (() => {
   }
 
   function randomOptionLabel(trackIndex) {
-    const resolved = state.resolvedPresets[trackIndex];
+    const resolved = resolvedOf(trackIndex);
     // corto para que quepa en la tira de la pista
     return resolved ? `${displayName(resolved)} · azar` : 'Aleatorio';
   }
@@ -706,10 +762,12 @@ const App = (() => {
     return regs ? regs[t] || 0 : 0;
   }
   function registerMark(t) {
+    if (isPadTrack(t)) return '<span class="strip-reg">≋</span>';
     const r = trackRegister(t);
     return r ? `<span class="strip-reg">${r < 0 ? '▾' : '▴'}</span>` : '';
   }
   function registerTitle(t) {
+    if (isPadTrack(t)) return ' title="Pista de acordes tenidos: sostiene la armonía con un sinte polifónico"';
     const r = trackRegister(t);
     return r ? ` title="${r < 0 ? 'Pista grave: una octava abajo' : 'Pista aguda: una octava arriba'}"` : '';
   }
@@ -720,7 +778,7 @@ const App = (() => {
 
     let html = `<div class="panel-spacer"><span>Pistas</span><span>${numTracks}</span></div>`;
     for (let t = 0; t < numTracks; t++) {
-      const settings = state.trackSettings[t];
+      const settings = settingsOf(t);
       const userIds = SynthEditor.getUserPresetNames().map(n => SynthEditor.USER_PREFIX + n);
       const options = ['random'].concat(AudioEngine.PRESETS, userIds).map(p => {
         const label = p === 'random' ? randomOptionLabel(t) : displayName(p);
@@ -754,17 +812,15 @@ const App = (() => {
 
     panel.querySelectorAll('.track-strip').forEach(strip => {
       const t = parseInt(strip.dataset.track);
-      const settings = state.trackSettings[t];
+      const settings = settingsOf(t);
 
       const presetSelect = strip.querySelector('.strip-preset');
       presetSelect.addEventListener('change', () => {
         settings.preset = presetSelect.value;
         // elegir un preset descarta la edición en vivo del editor de sintes
         settings.edited = null;
-        const resolved = settings.preset === 'random'
-          ? Generator.pickRandom(isBassTrack(t) ? AudioEngine.BASS_PRESETS : AudioEngine.PRESETS)
-          : settings.preset;
-        state.resolvedPresets[t] = resolved;
+        const resolved = settings.preset === 'random' ? randomPresetFor(t) : settings.preset;
+        setResolved(t, resolved);
         presetSelect.querySelector('option[value="random"]').textContent = randomOptionLabel(t);
         // definición completa: cambiar de preset también reemplaza la cadena de efectos
         const def = resolved.startsWith(SynthEditor.USER_PREFIX) ? SynthEditor.getUserPreset(resolved) : null;
@@ -773,7 +829,7 @@ const App = (() => {
       });
 
       strip.querySelector('.strip-edit').addEventListener('click', () => {
-        SynthEditor.open(t, state.resolvedPresets[t] || 'Synth', settings.edited);
+        SynthEditor.open(t, resolvedOf(t) || 'Synth', settings.edited);
       });
 
       strip.querySelector('.strip-vol').addEventListener('input', e => {
@@ -952,7 +1008,7 @@ const App = (() => {
     facts.innerHTML = [
       ['forma', form],
       ['contorno', piece.contour ? capitalize(piece.contour) : '—'],
-      ['pistas', piece.numTracks],
+      ['pistas', piece.padTrack >= 0 ? `${piece.numTracks - 1} + acordes` : piece.numTracks],
       ['célula', `${piece.cellLength} pasos`, 'fact-cell']
     ].map(([label, value, cls]) => `<span class="${cls || ''}"><span class="fact-label">${label}</span><b>${escapeHtml(String(value))}</b></span>`).join('');
 
@@ -1036,7 +1092,9 @@ const App = (() => {
       ['Célula', `${piece.cellLength} pasos (${piece.cellLength / 16} ${piece.cellLength === 16 ? 'compás' : 'compases'} de 4/4)`],
       ['Contorno', capitalize(piece.contour || '—') + (otherContours.length ? `; variaciones recontorneadas con ${otherContours.map(capitalize).join(', ')}` : '')],
       ['Motivos', `${contours.length}: la madre y ${contours.length - 1} variaciones`],
-      ['Pistas', String(piece.numTracks)],
+      ['Pistas', piece.padTrack >= 0
+        ? `${piece.numTracks - 1} melódicas y la ${piece.padTrack + 1} de acordes tenidos (≋), que sostiene la armonía del plan con conducción de voces`
+        : String(piece.numTracks)],
       ['Duración', `${formatTime(piece.totalSteps * stepSeconds())} a ♩=${getUIState().tempo} (${piece.totalSteps} pasos)`],
       ['Armonía', harmonyFact],
       ['Plan tonal', tonalFact],
@@ -1293,8 +1351,8 @@ const App = (() => {
   function setupSynthEditor() {
     SynthEditor.init({
       onChange: (t, def) => {
-        ensureTrackSettings(t + 1);
-        state.trackSettings[t].edited = def;
+        if (!isPadTrack(t)) ensureTrackSettings(t + 1);
+        settingsOf(t).edited = def;
         scheduleSave();
       },
       onPresetsChanged: () => {
@@ -1306,14 +1364,18 @@ const App = (() => {
             state.resolvedPresets[i] = null;
           }
         });
+        if (state.padSettings.preset.startsWith(SynthEditor.USER_PREFIX) && !valid.has(state.padSettings.preset)) {
+          state.padSettings.preset = 'random';
+          state.padResolved = null;
+        }
         buildTrackPanel(currentNumTracks());
         scheduleSave();
       },
       onPresetSaved: (t, name) => {
-        const settings = state.trackSettings[t];
+        const settings = settingsOf(t);
         settings.preset = SynthEditor.USER_PREFIX + name;
         settings.edited = null;
-        state.resolvedPresets[t] = settings.preset;
+        setResolved(t, settings.preset);
         buildTrackPanel(currentNumTracks());
         scheduleSave();
       }
