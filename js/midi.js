@@ -19,7 +19,7 @@ const MidiEngine = (() => {
   const CLOCKS_PER_QUARTER = 24;
   // Margen con que el reloj en reposo encola ticks por delante (ms): cubre el
   // periodo del ticker de Tone (~30 ms) y queda por debajo de su lookAhead
-  // (100 ms), así ningún tick en reposo cae después del start de la pieza
+  // (150 ms, audio.js), así ningún tick en reposo cae después del start de la pieza
   const IDLE_LOOKAHEAD_MS = 80;
   let clockEnabled = true;
   let clockRunning = false;    // el Transport suena (entre startClock y stopClock)

@@ -13,7 +13,10 @@ Todo se **pre-computa antes de reproducir**; no hay generación en tiempo real.
 ## Stack y ejecución
 
 - JavaScript vanilla (ES6, sin build, sin npm, sin frameworks).
-- Tone.js 14.8.49 por CDN (`index.html`).
+- Tone.js 14.8.49 por CDN (`index.html`). `audio.js` instala al cargar un
+  contexto propio con `latencyHint: 'playback'` y `lookAhead: 0.15`: con el
+  buffer mínimo de 'interactive' el audio se cortaba por momentos aunque la
+  CPU total estuviera holgada.
 - THREE.js 0.170 por CDN con importmap, solo para la vista 3D
   (`js/visualizer3d.js`, único módulo ESM; si el CDN falla la app sigue en 2D).
 - **No funciona desde `file://`**: Tone.js necesita contexto seguro. Servir por

@@ -1,4 +1,17 @@
 const AudioEngine = (() => {
+  // Contexto propio antes de crear ningún nodo. Con el 'interactive' por
+  // defecto el navegador usa el buffer de salida más chico (~10 ms en
+  // Windows): el hilo de audio tiene que entregar cada bloque a tiempo y
+  // cualquier pico (GC, el render 3D, disponer pistas) lo hace llegar tarde y
+  // se oye un corte aunque la CPU total esté holgada. 'playback' agranda el
+  // buffer; aquí nada necesita respuesta instantánea (todo se programa por
+  // adelantado) y midi.js descuenta outputLatency + baseLatency, así que el
+  // MIDI sigue alineado. lookAhead algo mayor que los 100 ms de Tone para que
+  // un frame lento del hilo principal no deje notas sin programar
+  try {
+    Tone.setContext(new Tone.Context({ latencyHint: 'playback', lookAhead: 0.15 }));
+  } catch (e) { /* se queda el contexto por defecto */ }
+
   let masterGain = null;
   let limiter = null;
   let reverb = null;
