@@ -581,7 +581,13 @@ const Mixer = (() => {
       presetSelect.innerHTML = host.presetOptionsHtml(t);
       renderInserts(t);
     });
-    el.querySelector('.mx-edit').addEventListener('click', () => host.openEditor(t));
+    const editBtn = el.querySelector('.mx-edit');
+    // la pista de percusión toca un kit, que el editor de sintes no edita
+    if (head.editable === false) {
+      editBtn.disabled = true;
+      editBtn.title = 'La percusión no tiene editor de sinte: elige el kit en el selector';
+    }
+    editBtn.addEventListener('click', () => host.openEditor(t));
     el.querySelector('.mx-chan select').addEventListener('change', e => {
       settings.midiChannel = parseInt(e.target.value);
       MidiEngine.setTrackChannel(t, settings.midiChannel);

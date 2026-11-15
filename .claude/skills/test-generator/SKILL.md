@@ -19,6 +19,7 @@ eval(fs.readFileSync('js/generator.js', 'utf8') + ';globalThis.Generator = Gener
 eval(fs.readFileSync('js/form.js', 'utf8') + ';globalThis.FormPlan = FormPlan;');
 eval(fs.readFileSync('js/harmony.js', 'utf8') + ';globalThis.Harmony = Harmony;');
 eval(fs.readFileSync('js/pad.js', 'utf8') + ';globalThis.Pad = Pad;');
+eval(fs.readFileSync('js/drums.js', 'utf8') + ';globalThis.Drums = Drums;');
 eval(fs.readFileSync('js/humanizer.js', 'utf8') + ';globalThis.Humanizer = Humanizer;');
 eval(fs.readFileSync('js/energy.js', 'utf8') + ';globalThis.Energy = Energy;');
 eval(fs.readFileSync('js/counterpoint.js', 'utf8') + ';globalThis.Counterpoint = Counterpoint;');
@@ -228,6 +229,21 @@ antes del contrapunto):
   devuelta debe cumplirlo tal cual.
 - El pase no añade ni quita notas (mismas posiciones ocupadas del `grid`) y las
   stats devueltas acotan lo tocado (~7% movidas+fantasma sobre el total).
+
+**Percusión** (`Drums.compose`, con `drums: true` en los opts de `compose`):
+- `piece.drumTrack === piece.numTracks - 1` y `trackRegisters` con una
+  entrada por pista.
+- Cada celda de su fila es `voices[0]`; en un paso no se repite instrumento;
+  todo golpe con `midi === Drums.KIT[drum].midi`, `velocity` en (0, 1],
+  `durationSteps === 1` y `motifIndex === null`; `stepEvents` tiene
+  exactamente un evento por golpe, con la misma celda.
+- Muda en la primera frase de la exposición (su primera mitad si esa frase
+  es la pieza entera) y, en el último compás, solo un bombo en su cabeza.
+- Determinista: componer dos veces sobre la misma rejilla da los mismos
+  golpes. `retune` ida y vuelta no cambia ni `midi` ni `velocity` de la
+  percusión, y el resto de la pieza mantiene `midi === cellMidi(...)`.
+- Métrica: golpes por paso ~0.35 en exposición, lírico y sombrío, ~0.6 en
+  brillante y ~1.1 en agitado (hi-hat en semicorcheas).
 
 **Alturas**: `degreeToMidi(degree, scale, key)` produce MIDI razonable (~24–108)
 para todas las escalas de `Generator.SCALES` con grados en [-7, 7] y tonalidades

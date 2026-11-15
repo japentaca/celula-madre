@@ -163,6 +163,15 @@
         <span class="dialog-val"></span>
       </div>
       <div class="dialog-row">
+        <label title="Añade una pista de percusión cuyo ritmo deriva de la célula de cada sección: bombo donde la célula ataca en tiempo, hi-hat en sus huecos y notas fantasma en sus contratiempos. Sigue el plan formal: entra tras la primera frase, cambia de variante con el carácter de cada letra, crece hacia el clímax y marca los finales de frase con rellenos. Su kit (electrónico, acústico o de mano) se elige en su canal de la consola; por MIDI sale en el canal 10 con notas General MIDI. Se aplica al generar. Aleatoria: en el 50 % de las piezas">Percusión</label>
+        <select id="select-drums">
+          <option value="on">Sí</option>
+          <option value="off">No</option>
+          <option value="random" selected>Aleatoria</option>
+        </select>
+        <span class="dialog-val"></span>
+      </div>
+      <div class="dialog-row">
         <label>Preset</label>
         <select id="select-preset">
           <option value="random" selected>Aleatorio (por pista)</option>
@@ -285,6 +294,7 @@
         <a href="#g-tonal">Plan tonal</a>
         <a href="#g-harmony">Armonía</a>
         <a href="#g-pad">Acordes tenidos</a>
+        <a href="#g-drums">Percusión</a>
         <a href="#g-passes">Pases</a>
         <a href="#g-end">Duraciones y final</a>
         <a href="#g-you">Lo que controlas</a>
@@ -600,6 +610,36 @@
           </ul>
         </section>
 
+        <section id="g-drums">
+          <h3>Percusión</h3>
+          <p>Con «Percusión» (diálogo Generación) la pieza lleva una pista más, marcada
+          con ◆, sin patrones de catálogo: su ritmo <b>deriva de la célula</b>. Cada
+          letra de la forma usa el motivo que más pesa en su carácter (la madre en la
+          exposición), así que cada sección tiene su propio ritmo y las que comparten
+          letra, el mismo. Se compone al final y ningún pase la toca.</p>
+          <ul>
+            <li><b>Derivación:</b> bombo donde la célula ataca en tiempo, hi-hat en sus
+            huecos, bombos sincopados en sus «y» acentuados y cajas fantasma en sus
+            semicorcheas a contratiempo. La caja marca los tiempos 2 y 4.</li>
+            <li><b>Carácter:</b> el lírico y el sombrío van a medio tiempo (caja solo en
+            el 3), el sombrío con toms graves en lugar de hi-hat; el agitado lleva el
+            hi-hat en semicorcheas con síncopas y notas fantasma; el brillante, en
+            corcheas con un hi-hat abierto en el silencio más largo de la célula.</li>
+            <li><b>Plan formal:</b> entra tras la primera frase solo con bombo y caja; el
+            hi-hat y las síncopas se suman al crecer la intensidad hacia el clímax, que
+            recibe un plato. Cada frase termina en un relleno de caja y toms, más largo
+            al final de sección; la retransición en crescendo acaba en un redoble y la
+            que se apaga se queda en bombo y caja. El final adelgaza hasta un último
+            bombo.</li>
+            <li><b>Complemento:</b> donde tres o más melodías atacan a la vez, el hi-hat
+            y las notas fantasma ceden. No hay swing: los acentos van en la velocity.</li>
+            <li><b>Sonido:</b> tres kits sintetizados (electrónico, acústico y percusión
+            de mano), elegibles en su canal de la consola; aleatorio sortea uno. Va al
+            centro, casi sin reverb, guarda sus ajustes aparte y por MIDI sale en el
+            canal 10 con notas General MIDI.</li>
+          </ul>
+        </section>
+
         <section id="g-passes">
           <h3>Pases de acabado</h3>
           <p>Con la rejilla de notas ya colocada, cuatro pases la retocan en este
@@ -655,7 +695,7 @@
           <h3>Lo que controlas</h3>
           <ul>
             <li><b>Generación:</b> pistas, duración y tempo (fijos o al azar dentro de
-            un rango), contornos permitidos, forma, modulación, acordes tenidos, escala
+            un rango), contornos permitidos, forma, modulación, acordes tenidos, percusión, escala
             y tonalidad.</li>
             <li><b>Escala y tonalidad en vivo:</b> como la pieza guarda grados y no
             notas, cambiarlas re-afina la pieza en curso sin recomponerla — también
@@ -705,6 +745,7 @@
   <script src="js/form.js"></script>
   <script src="js/harmony.js"></script>
   <script src="js/pad.js"></script>
+  <script src="js/drums.js"></script>
   <script src="js/humanizer.js"></script>
   <script src="js/energy.js"></script>
   <script src="js/counterpoint.js"></script>

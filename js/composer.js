@@ -466,10 +466,11 @@ const Composer = (() => {
     });
   }
 
-  // opts: { numTracks, motifs, formParts, cellLength, scale, key, repeatsByLetter?, modulation?, pad? }
+  // opts: { numTracks, motifs, formParts, cellLength, scale, key, repeatsByLetter?, modulation?, pad?, drums? }
   // pad: añade una pista de acordes tenidos (Pad) tras las numTracks
   // melódicas; piece.numTracks las cuenta todas y piece.padTrack es su índice
-  // (−1 si no hay)
+  // (−1 si no hay). drums: añade al final una pista de percusión derivada de
+  // los motivos (Drums); piece.drumTrack es su índice (−1 si no hay)
   // repeatsByLetter (de planDuration) fija las repeticiones de cada letra; sin
   // él se sortean entre SECTION_REPEAT_CHOICES. modulation: 'real' (por
   // defecto), 'soft' o 'none' (Generator.MODULATIONS)
@@ -659,8 +660,19 @@ const Composer = (() => {
     }
     if (padTrack >= 0) trackRegisters.push(0);
 
-    piece = { sections, totalSteps, grid, stepEvents, blockMarkers, numTracks: grid.length, cellLength, scale, key, modulation, harmony, form, trackRegisters, padTrack };
+    // Pista de percusión (Drums): la última, derivada del ritmo de los
+    // motivos de cada letra. Tampoco la toca ningún pase
+    let drumTrack = -1;
+    if (opts.drums) {
+      grid.push(new Array(totalSteps).fill(null));
+      if (Drums.compose(ctx, grid.length - 1, motifs)) drumTrack = grid.length - 1;
+      else grid.pop();
+    }
+    if (drumTrack >= 0) trackRegisters.push(0);
+
+    piece = { sections, totalSteps, grid, stepEvents, blockMarkers, numTracks: grid.length, cellLength, scale, key, modulation, harmony, form, trackRegisters, padTrack, drumTrack };
     Pad.schedule(piece, padTrack);
+    Drums.schedule(piece, drumTrack);
     // Una pieza nueva invalida cualquier pausa pendiente de la anterior
     currentStep = 0;
     return piece;
@@ -686,7 +698,7 @@ const Composer = (() => {
     Pad.refresh(piece);
     for (const row of piece.grid) {
       for (const cell of row) {
-        if (cell && !cell.pad) cell.midi = Generator.cellMidi(cell.degree, scale, key, cell, piece.modulation);
+        if (cell && !cell.pad && !cell.drum) cell.midi = Generator.cellMidi(cell.degree, scale, key, cell, piece.modulation);
       }
     }
   }

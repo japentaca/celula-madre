@@ -22,6 +22,8 @@ const Visualizer = (() => {
   const LABEL = '#8f8d87';
   const FAINT = '#5f5e5a';
   const RECAP = 'rgba(255, 181, 71, 0.95)';
+  // Golpes de la pista de percusión: gris neutro, fuera de los colores de motivo
+  const DRUM_COLOR = [200, 198, 190];
   const MONO = '"JetBrains Mono", ui-monospace, Consolas, monospace';
 
   // Color por motivo: [0] célula madre, resto variaciones
@@ -68,12 +70,15 @@ const Visualizer = (() => {
     return Math.max(3, Math.min(20, fit));
   }
 
-  function midiRange(grid) {
+  function midiRange(grid, skipDrums = false) {
     let min = Infinity;
     let max = -Infinity;
     for (const row of grid) {
       for (const cell of row) {
         if (!cell) continue;
+        // en el piano roll la percusión va por carriles y no cuenta; la vista
+        // 3D sí la sitúa por su nota General MIDI
+        if (cell.drum && skipDrums) continue;
         for (const note of cell.voices || [cell]) {
           if (note.midi < min) min = note.midi;
           if (note.midi > max) max = note.midi;
@@ -138,7 +143,7 @@ const Visualizer = (() => {
     g.fillStyle = BG;
     g.fillRect(0, 0, width, height);
 
-    const range = midiRange(piece.grid);
+    const range = midiRange(piece.grid, true);
 
     // Fondo y etiqueta de cada sección
     piece.sections.forEach((section, i) => {
@@ -180,10 +185,11 @@ const Visualizer = (() => {
         const notes = row[s].voices ? row[s].voices.filter(v => !v.tied) : [row[s]];
         for (const cell of notes) {
           const x = headerWidth + s * cellWidth;
-          const norm = (cell.midi - range.min) / (range.max - range.min);
+          // percusión (Drums): un carril por instrumento, en gris neutro
+          const norm = cell.drum ? cell.lane : (cell.midi - range.min) / (range.max - range.min);
           const ny = y + (trackHeight - noteHeight - 2) * (1 - norm) + 1;
           const brightness = 0.4 + 0.6 * cell.velocity;
-          const color = MOTIF_COLORS[(cell.motifIndex || 0) % MOTIF_COLORS.length];
+          const color = cell.drum ? DRUM_COLOR : MOTIF_COLORS[(cell.motifIndex || 0) % MOTIF_COLORS.length];
           const r = Math.floor(color[0] * brightness);
           const gg = Math.floor(color[1] * brightness);
           const b = Math.floor(color[2] * brightness);
@@ -196,7 +202,7 @@ const Visualizer = (() => {
       g.fillStyle = FAINT;
       g.font = `10px ${MONO}`;
       g.textAlign = 'right';
-      g.fillText(String(t + 1).padStart(2, '0') + (t === piece.padTrack ? '≋' : ''), headerWidth - 10, y + trackHeight / 2 + 3);
+      g.fillText(String(t + 1).padStart(2, '0') + (t === piece.padTrack ? '≋' : t === piece.drumTrack ? '◆' : ''), headerWidth - 10, y + trackHeight / 2 + 3);
     }
 
     // Límite izquierdo de cada bloque dentro de su pista

@@ -137,15 +137,124 @@ const AudioEngine = (() => {
   // sortea para ella cuando su preset es aleatorio
   const PAD_PRESETS = ['Strings', 'Pad'];
 
-  // Definición { base, params, chain } de un nombre de fábrica (motor o voz),
-  // copia nueva en cada llamada para que el editor pueda modificarla
+  // Kits de percusión sintetizada para la pista Drums (sin samples). No son
+  // motores del editor de sintes ni entran en PRESETS: solo los elige la pista
+  // de percusión (DRUM_KITS). Cada voz: parámetros de su sinte, `level` (dB)
+  // y, en las de membrana, `freq` (Hz) y `dur` (s). Las de ruido pasan por un
+  // filtro propio. volume: compensación del kit entero (dB)
+  const KITS = {
+    Kit808: { label: 'Kit electrónico', volume: -4,
+      kick: { freq: 48, dur: 0.5, level: 0,
+        synth: { pitchDecay: 0.05, octaves: 5, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.5, sustain: 0, release: 0.1 } } },
+      snare: { level: -9, decay: 0.16, filter: { type: 'highpass', frequency: 1500, Q: 0.7 },
+        body: { freq: 190, dur: 0.1, level: -8,
+          synth: { pitchDecay: 0.02, octaves: 1.5, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.05 } } } },
+      hat: { level: -15, closed: 0.035, open: 0.28, filter: { type: 'highpass', frequency: 8000, Q: 0.7 } },
+      crash: { level: -17, decay: 1.4, filter: { type: 'highpass', frequency: 5000, Q: 0.5 } },
+      tom: { freqs: [180, 130, 95], dur: 0.3, level: -3,
+        synth: { pitchDecay: 0.06, octaves: 2.5, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.1 } } } },
+    KitAcoustic: { label: 'Kit acústico', volume: -4,
+      kick: { freq: 60, dur: 0.25, level: 0,
+        synth: { pitchDecay: 0.02, octaves: 3.5, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.08 } } },
+      snare: { level: -8, decay: 0.2, filter: { type: 'bandpass', frequency: 2500, Q: 0.6 },
+        body: { freq: 210, dur: 0.12, level: -6,
+          synth: { pitchDecay: 0.015, octaves: 1.2, oscillator: { type: 'triangle' }, envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.05 } } } },
+      hat: { level: -14, closed: 0.05, open: 0.35, filter: { type: 'highpass', frequency: 6500, Q: 0.7 } },
+      crash: { level: -16, decay: 1.8, filter: { type: 'highpass', frequency: 3500, Q: 0.5 } },
+      tom: { freqs: [200, 150, 110], dur: 0.35, level: -3,
+        synth: { pitchDecay: 0.04, octaves: 1.5, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.35, sustain: 0, release: 0.1 } } } },
+    // Percusión de mano: tambor grave, golpe seco con cuerpo, shaker y congas
+    KitHand: { label: 'Percusión de mano', volume: -3,
+      kick: { freq: 85, dur: 0.22, level: 0,
+        synth: { pitchDecay: 0.015, octaves: 1.5, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.22, sustain: 0, release: 0.08 } } },
+      snare: { level: -14, decay: 0.05, filter: { type: 'bandpass', frequency: 1800, Q: 2 },
+        body: { freq: 330, dur: 0.09, level: -4,
+          synth: { pitchDecay: 0.008, octaves: 1, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.09, sustain: 0, release: 0.04 } } } },
+      hat: { level: -16, attack: 0.008, closed: 0.045, open: 0.12, filter: { type: 'highpass', frequency: 5000, Q: 0.7 } },
+      crash: { level: -20, attack: 0.02, decay: 0.5, filter: { type: 'highpass', frequency: 6000, Q: 0.5 } },
+      tom: { freqs: [392, 294, 220], dur: 0.2, level: -4,
+        synth: { pitchDecay: 0.01, octaves: 1, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.08 } } } }
+  };
+  const DRUM_KITS = Object.keys(KITS);
+
+  // Kit: varias voces de Tone tras un único nodo de salida, con la interfaz
+  // que el resto del motor espera de un sinte (volume, connect, disconnect,
+  // dispose, set, get). No se toca con triggerAttackRelease sino con
+  // hit(midi, time, velocity): la nota General MIDI elige la voz (playNote)
+  function makeKit(name) {
+    const kit = KITS[name] || KITS[DRUM_KITS[0]];
+    const out = new Tone.Volume(kit.volume || 0);
+    const nodes = [out];
+    const keep = node => { nodes.push(node); return node; };
+    const membrane = spec => {
+      const synth = keep(new Tone.MembraneSynth(spec.synth));
+      synth.volume.value = spec.level || 0;
+      synth.connect(out);
+      return synth;
+    };
+    const noise = (spec, decay) => {
+      const filter = keep(new Tone.Filter(spec.filter));
+      filter.connect(out);
+      const synth = keep(new Tone.NoiseSynth({
+        noise: { type: 'white' },
+        envelope: { attack: spec.attack || 0.001, decay, sustain: 0, release: 0.03 }
+      }));
+      synth.volume.value = spec.level || 0;
+      synth.connect(filter);
+      return synth;
+    };
+    const kick = membrane(kit.kick);
+    const tom = membrane(kit.tom);
+    const snare = noise(kit.snare, kit.snare.decay);
+    const body = membrane(kit.snare.body);
+    const hat = noise(kit.hat, kit.hat.closed);
+    const crash = noise(kit.crash, kit.crash.decay);
+    const toms = { 50: 0, 47: 1, 43: 2 };
+
+    function hit(midi, time, velocity) {
+      if (midi === 36) {
+        kick.triggerAttackRelease(kit.kick.freq, kit.kick.dur, time, velocity);
+      } else if (midi === 38) {
+        snare.triggerAttackRelease(kit.snare.decay, time, velocity);
+        body.triggerAttackRelease(kit.snare.body.freq, kit.snare.body.dur, time, velocity);
+      } else if (midi === 42 || midi === 46) {
+        // una sola voz para cerrado y abierto: el cerrado corta al abierto. La
+        // caída se fija por golpe (rige desde el siguiente disparo)
+        const decay = midi === 46 ? kit.hat.open : kit.hat.closed;
+        hat.envelope.decay = decay;
+        hat.triggerAttackRelease(decay, time, velocity);
+      } else if (midi === 49) {
+        crash.triggerAttackRelease(kit.crash.decay, time, velocity);
+      } else if (toms[midi] !== undefined) {
+        tom.triggerAttackRelease(kit.tom.freqs[toms[midi]], kit.tom.dur, time, velocity);
+      }
+    }
+
+    return {
+      hit,
+      volume: out.volume,
+      connect: dest => out.connect(dest),
+      disconnect: () => out.disconnect(),
+      dispose: () => {
+        for (const node of nodes) {
+          try { node.dispose(); } catch (e) { /* ignore */ }
+        }
+      },
+      set: () => {},
+      get: () => ({})
+    };
+  }
+
+  // Definición { base, params, chain } de un nombre de fábrica (motor, voz o
+  // kit), copia nueva en cada llamada para que el editor pueda modificarla
   function presetDef(name) {
     const voice = VOICES[name];
     if (voice) return JSON.parse(JSON.stringify({ base: voice.base, params: voice.params, chain: voice.chain }));
-    return { base: PRESETS[name] ? name : 'Synth', params: null, chain: [] };
+    return { base: PRESETS[name] || KITS[name] ? name : 'Synth', params: null, chain: [] };
   }
 
   function presetLabel(name) {
+    if (KITS[name]) return KITS[name].label;
     return VOICES[name] ? VOICES[name].label : name;
   }
 
@@ -255,6 +364,8 @@ const AudioEngine = (() => {
   // usuario o edición en vivo del editor de sintes)
   function makeSynth(preset) {
     const def = typeof preset === 'string' ? presetDef(preset) : preset;
+    // kit de percusión: lleva su propia compensación y no admite parámetros
+    if (KITS[def.base]) return makeKit(def.base);
     const factory = PRESETS[def.base] || PRESETS.Synth;
     const synth = factory();
     const params = def.params ? { ...def.params } : null;
@@ -582,7 +693,9 @@ const AudioEngine = (() => {
     const track = tracks[trackIndex];
     if (!track) return;
     try {
-      track.synth.triggerAttackRelease(Tone.Frequency(midi, 'midi'), durationSeconds, time, velocity);
+      // kit de percusión: la nota elige la voz y cada voz trae su duración
+      if (track.synth.hit) track.synth.hit(midi, time, velocity);
+      else track.synth.triggerAttackRelease(Tone.Frequency(midi, 'midi'), durationSeconds, time, velocity);
     } catch (e) { /* nota descartada si el sinte no puede retriggerar */ }
   }
 
@@ -639,6 +752,7 @@ const AudioEngine = (() => {
     PRESETS: Object.keys(PRESETS).concat(Object.keys(VOICES)),
     BASS_PRESETS,
     PAD_PRESETS,
+    DRUM_KITS,
     presetDef,
     presetLabel,
     DELAY_SUBDIVISIONS,

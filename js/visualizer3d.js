@@ -2091,7 +2091,7 @@ window.Visualizer3D = (() => {
       // duración cruce la frontera
       const mid = s + durationSteps / 2;
       const phi = orbitPhi(sec, mid);
-      const isAltered = canCompare && (!!cell.alter || !homePcs.has(((cell.midi % 12) + 12) % 12));
+      const isAltered = canCompare && !cell.drum && (!!cell.alter || !homePcs.has(((cell.midi % 12) + 12) % 12));
       orbitXZ(sec, mid, t, tmp);
       if (isAltered) {
         tmp.x += 0.3 * Math.sin(phi);

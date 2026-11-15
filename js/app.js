@@ -9,6 +9,9 @@ const App = (() => {
     // resuelto van aparte, porque su índice cambia con el número de pistas
     padSettings: null,
     padResolved: null,
+    // Pista de percusión (Drums, piece.drumTrack): igual, ajustes y kit aparte
+    drumSettings: null,
+    drumResolved: null,
     // Vista activa de la grilla ('2d' | 'city' | 'tunnel' | 'terrain' | 'stars' | 'musicbox' | 'fifths' | 'pianola' | 'loom' | 'strings' | 'galaxy' | 'garden' | 'swarm' | 'mobius') y último paso del
     // cursor, para reponerlo al conmutar de vista en plena reproducción
     view: '2d',
@@ -107,6 +110,11 @@ const App = (() => {
   state.padSettings = { ...DEFAULT_PAD_SETTINGS };
   // Probabilidad de pista de acordes con «Acordes tenidos: Aleatoria»
   const PAD_CHANCE = 0.6;
+  // La percusión va seca y al centro, por el canal MIDI 10 (General MIDI)
+  const DEFAULT_DRUM_SETTINGS = { ...DEFAULT_TRACK_SETTINGS, volume: 0.6, reverb: 0.06, midiChannel: 10 };
+  state.drumSettings = { ...DEFAULT_DRUM_SETTINGS };
+  // Probabilidad de pista de percusión con «Percusión: Aleatoria»
+  const DRUMS_CHANCE = 0.5;
 
   // ---- Parámetros de los buses de reverb y delay (los edita la consola) ----
   // Rango y paso de cada uno: los del antiguo diálogo Efectos, para que el
@@ -176,7 +184,9 @@ const App = (() => {
       trackSettings: state.trackSettings,
       resolvedPresets: state.resolvedPresets,
       padSettings: state.padSettings,
-      padResolved: state.padResolved
+      padResolved: state.padResolved,
+      drumSettings: state.drumSettings,
+      drumResolved: state.drumResolved
     };
   }
 
@@ -213,7 +223,7 @@ const App = (() => {
     v: 1,
     ui: {
       tempo: 96, numTracks: 6, duration: 8, preset: 'random', scale: 'random', contours: [],
-      key: 'random', formChoice: 'random', modulation: 'real', pad: 'random', autogen: true, autorestart: true, kiosk: false,
+      key: 'random', formChoice: 'random', modulation: 'real', pad: 'random', drums: 'random', autogen: true, autorestart: true, kiosk: false,
       view: 'mobius',
       tracksRandom: true, tracksRange: [4, 7],
       durationRandom: true, durationRange: [2, 4],
@@ -287,6 +297,7 @@ const App = (() => {
     setControl('select-modulation', ui.modulation, 'change');
     // Ajustes guardados antes del selector no lo traen: queda «Aleatoria» (HTML)
     if (ui.pad) setControl('select-pad', ui.pad, 'change');
+    if (ui.drums) setControl('select-drums', ui.drums, 'change');
     setControl('checkbox-autogen', ui.autogen, 'change');
     setControl('checkbox-autorestart', ui.autorestart, 'change');
     setControl('checkbox-kiosk', ui.kiosk, 'change');
@@ -343,6 +354,14 @@ const App = (() => {
       }
       const r = saved.padResolved;
       state.padResolved = r && !(r.startsWith(SynthEditor.USER_PREFIX) && !valid.has(r)) ? r : null;
+    }
+    // La percusión solo admite kits (AudioEngine.DRUM_KITS)
+    if (saved.drumSettings) {
+      const kits = AudioEngine.DRUM_KITS;
+      state.drumSettings = { ...DEFAULT_DRUM_SETTINGS, ...saved.drumSettings };
+      if (!kits.includes(state.drumSettings.preset)) state.drumSettings.preset = 'random';
+      if (state.drumSettings.edited && !kits.includes(state.drumSettings.edited.base)) state.drumSettings.edited = null;
+      state.drumResolved = kits.includes(saved.drumResolved) ? saved.drumResolved : null;
     }
   }
 
@@ -417,10 +436,10 @@ const App = (() => {
   // Reparte las pistas por el espectro estéreo: T1 a la izquierda, la última a la derecha
   // Reparto estéreo estándar: la pista grave (registro −1 de la pieza) al
   // centro y las demás abiertas de izquierda a derecha en orden de pista
-  // y el pad (padTrack) también al centro
-  function spreadPan(trackIndex, registers, padTrack = -1) {
-    if (registers[trackIndex] < 0 || trackIndex === padTrack) return 0;
-    const others = registers.map((r, t) => t).filter(t => registers[t] >= 0 && t !== padTrack);
+  // y el pad y la percusión (centered: sus índices) también al centro
+  function spreadPan(trackIndex, registers, centered = []) {
+    if (registers[trackIndex] < 0 || centered.includes(trackIndex)) return 0;
+    const others = registers.map((r, t) => t).filter(t => registers[t] >= 0 && !centered.includes(t));
     if (others.length <= 1) return 0;
     const maxSpread = 0.85;
     return -maxSpread + (2 * maxSpread * others.indexOf(trackIndex)) / (others.length - 1);
@@ -450,6 +469,8 @@ const App = (() => {
       modulation: document.getElementById('select-modulation').value,
       // pista de acordes tenidos: 'on', 'off' o 'random' (PAD_CHANCE)
       pad: document.getElementById('select-pad').value,
+      // pista de percusión: 'on', 'off' o 'random' (DRUMS_CHANCE)
+      drums: document.getElementById('select-drums').value,
       autogen: document.getElementById('checkbox-autogen').checked,
       autorestart: document.getElementById('checkbox-autorestart').checked,
       kiosk: document.getElementById('checkbox-kiosk').checked,
@@ -652,6 +673,13 @@ const App = (() => {
   // usuario vuelve a elegir "Aleatorio" en la consola, o si a la pista le toca
   // el registro grave y lo sorteado no es de AudioEngine.BASS_PRESETS
   function resolvePreset(trackIndex, ui) {
+    // La percusión solo toca kits: ni el preset global ni los sintes le aplican
+    if (isDrumTrack(trackIndex)) {
+      const drums = state.drumSettings;
+      if (drums.preset !== 'random') return drums.preset;
+      const kept = state.drumResolved;
+      return AudioEngine.DRUM_KITS.includes(kept) ? kept : Generator.pickRandom(AudioEngine.DRUM_KITS);
+    }
     // El pad necesita un sinte polifónico: el preset global no le aplica y,
     // en aleatorio, sortea entre AudioEngine.PAD_PRESETS
     if (isPadTrack(trackIndex)) {
@@ -673,17 +701,24 @@ const App = (() => {
   function isPadTrack(trackIndex) {
     return !!state.piece && state.piece.padTrack === trackIndex;
   }
+  function isDrumTrack(trackIndex) {
+    return !!state.piece && state.piece.drumTrack === trackIndex;
+  }
   function settingsOf(trackIndex) {
+    if (isDrumTrack(trackIndex)) return state.drumSettings;
     return isPadTrack(trackIndex) ? state.padSettings : state.trackSettings[trackIndex];
   }
   function resolvedOf(trackIndex) {
+    if (isDrumTrack(trackIndex)) return state.drumResolved;
     return isPadTrack(trackIndex) ? state.padResolved : state.resolvedPresets[trackIndex];
   }
   function setResolved(trackIndex, name) {
-    if (isPadTrack(trackIndex)) state.padResolved = name;
+    if (isDrumTrack(trackIndex)) state.drumResolved = name;
+    else if (isPadTrack(trackIndex)) state.padResolved = name;
     else state.resolvedPresets[trackIndex] = name;
   }
   function randomPresetFor(trackIndex) {
+    if (isDrumTrack(trackIndex)) return Generator.pickRandom(AudioEngine.DRUM_KITS);
     if (isPadTrack(trackIndex)) return Generator.pickRandom(AudioEngine.PAD_PRESETS);
     return Generator.pickRandom(isBassTrack(trackIndex) ? AudioEngine.BASS_PRESETS : AudioEngine.PRESETS);
   }
@@ -749,9 +784,10 @@ const App = (() => {
       key: Generator.resolveKey(ui.key),
       repeatsByLetter: plan.repeats,
       modulation: Generator.resolveModulation(ui.modulation),
-      pad: ui.pad === 'random' ? Math.random() < PAD_CHANCE : ui.pad === 'on'
+      pad: ui.pad === 'random' ? Math.random() < PAD_CHANCE : ui.pad === 'on',
+      drums: ui.drums === 'random' ? Math.random() < DRUMS_CHANCE : ui.drums === 'on'
     });
-    // con pista de acordes, piece.numTracks la cuenta (numTracks son las melódicas)
+    // con pista de acordes o de percusión, piece.numTracks las cuenta (numTracks son las melódicas)
     const allTracks = state.piece.numTracks;
     const configs = [];
     const resolved = [];
@@ -759,8 +795,9 @@ const App = (() => {
       const preset = resolvePreset(t, ui);
       const settings = settingsOf(t);
       // el reparto estéreo se recalcula salvo que el usuario haya movido el paneo a mano
-      if (!settings.panTouched) settings.pan = spreadPan(t, state.piece.trackRegisters, state.piece.padTrack);
-      if (isPadTrack(t)) state.padResolved = preset;
+      if (!settings.panTouched) settings.pan = spreadPan(t, state.piece.trackRegisters, [state.piece.padTrack, state.piece.drumTrack]);
+      if (isDrumTrack(t)) state.drumResolved = preset;
+      else if (isPadTrack(t)) state.padResolved = preset;
       else resolved.push(preset);
       configs.push({ preset: toEnginePreset(t, preset), volume: settings.volume, reverb: settings.reverb, delay: settings.delay, pan: settings.pan });
     }
@@ -779,13 +816,14 @@ const App = (() => {
     const contourInfo = extraContours.length ? `${motherCell.contour} (variaciones: ${extraContours.join(', ')})` : motherCell.contour;
     const tonalPlan = state.piece.sections.map(s => sectionKeyName(state.piece, s)).join(' → ');
     const characters = state.piece.sections.map(s => `${s.label}:${s.character ? s.character.name : '?'}${s.climax ? '*' : ''}`).join(' ');
-    console.log(`Pieza generada — ${numTracks} pistas${state.piece.padTrack >= 0 ? ' + acordes' : ''}, ${formatTime(state.piece.totalSteps * 15 / bpm)} (objetivo ${minutes} min), célula de ${cellLength} pasos, ♩=${bpm}, contorno: ${contourInfo}, forma: ${formStr}, ${optionText('select-key', state.piece.key)} ${optionText('select-scale', state.piece.scale)}, plan tonal (${state.piece.modulation}): ${tonalPlan}, carácter (* clímax): ${characters}`);
+    console.log(`Pieza generada — ${numTracks} pistas${state.piece.padTrack >= 0 ? ' + acordes' : ''}${state.piece.drumTrack >= 0 ? ' + percusión' : ''}, ${formatTime(state.piece.totalSteps * 15 / bpm)} (objetivo ${minutes} min), célula de ${cellLength} pasos, ♩=${bpm}, contorno: ${contourInfo}, forma: ${formStr}, ${optionText('select-key', state.piece.key)} ${optionText('select-scale', state.piece.scale)}, plan tonal (${state.piece.modulation}): ${tonalPlan}, carácter (* clímax): ${characters}`);
 
     lastShownSecond = -1;
     renderPieceBar();
     vizRender();
     Mixer.build();
-    SynthEditor.ensureValid(allTracks);
+    // el editor de sintes no edita kits: si su pista pasó a ser la de percusión, se cierra
+    SynthEditor.ensureValid(state.piece.drumTrack >= 0 ? state.piece.drumTrack : allTracks);
     // los presets sorteados forman parte de lo que se restaura al recargar
     scheduleSave();
   }
@@ -832,7 +870,8 @@ const App = (() => {
     const piece = state.piece;
     const pairs = [['select-scale', piece && piece.scale], ['select-key', piece && piece.key],
       ['select-modulation', piece && piece.modulation],
-      ['select-pad', piece && (piece.padTrack >= 0 ? 'on' : 'off')]];
+      ['select-pad', piece && (piece.padTrack >= 0 ? 'on' : 'off')],
+      ['select-drums', piece && (piece.drumTrack >= 0 ? 'on' : 'off')]];
     for (const [id, value] of pairs) {
       const opt = document.querySelector(`#${id} option[value="random"]`);
       if (opt) opt.textContent = piece ? `Aleatoria (${optionText(id, value)})` : 'Aleatoria';
@@ -851,22 +890,26 @@ const App = (() => {
     return regs ? regs[t] || 0 : 0;
   }
   function registerMark(t) {
+    if (isDrumTrack(t)) return '<span class="strip-reg">◆</span>';
     if (isPadTrack(t)) return '<span class="strip-reg">≋</span>';
     const r = trackRegister(t);
     return r ? `<span class="strip-reg">${r < 0 ? '▾' : '▴'}</span>` : '';
   }
   function registerTitle(t) {
+    if (isDrumTrack(t)) return ' title="Pista de percusión: su ritmo deriva de la célula de cada sección"';
     if (isPadTrack(t)) return ' title="Pista de acordes tenidos: sostiene la armonía con un sinte polifónico"';
     const r = trackRegister(t);
     return r ? ` title="${r < 0 ? 'Pista grave: una octava abajo' : 'Pista aguda: una octava arriba'}"` : '';
   }
 
   // Opciones del selector de preset de una pista en la consola:
-  // aleatorio (con lo sorteado), presets de fábrica y de usuario
+  // aleatorio (con lo sorteado), presets de fábrica y de usuario; en la de
+  // percusión, solo los kits
   function presetOptionsHtml(t) {
     const settings = settingsOf(t);
     const userIds = SynthEditor.getUserPresetNames().map(n => SynthEditor.USER_PREFIX + n);
-    return ['random'].concat(AudioEngine.PRESETS, userIds).map(p => {
+    const names = isDrumTrack(t) ? AudioEngine.DRUM_KITS : AudioEngine.PRESETS.concat(userIds);
+    return ['random'].concat(names).map(p => {
       const label = p === 'random' ? randomOptionLabel(t) : displayName(p);
       const selected = settings.preset === p ? ' selected' : '';
       return `<option value="${escapeHtml(p)}"${selected}>${escapeHtml(label)}</option>`;
@@ -1045,7 +1088,7 @@ const App = (() => {
     facts.innerHTML = [
       ['forma', form],
       ['contorno', piece.contour ? capitalize(piece.contour) : '—'],
-      ['pistas', piece.padTrack >= 0 ? `${piece.numTracks - 1} + acordes` : piece.numTracks],
+      ['pistas', melodicTracks(piece) + (piece.padTrack >= 0 ? ' + acordes' : '') + (piece.drumTrack >= 0 ? ' + percusión' : '')],
       ['célula', `${piece.cellLength} pasos`, 'fact-cell']
     ].map(([label, value, cls]) => `<span class="${cls || ''}"><span class="fact-label">${label}</span><b>${escapeHtml(String(value))}</b></span>`).join('');
 
@@ -1062,6 +1105,11 @@ const App = (() => {
     }).join('') + '<div class="section-fill"></div><div class="section-head"></div>';
 
     updatePosition(Composer.getIsPlaying() || state.cursorStep >= 0 ? state.cursorStep : -1);
+  }
+
+  // Pistas con motivos: sin la de acordes ni la de percusión
+  function melodicTracks(piece) {
+    return piece.numTracks - (piece.padTrack >= 0 ? 1 : 0) - (piece.drumTrack >= 0 ? 1 : 0);
   }
 
   // Apartado «En esta pieza» de la guía: la teoría aplicada a lo que suena
@@ -1129,9 +1177,9 @@ const App = (() => {
       ['Célula', `${piece.cellLength} pasos (${piece.cellLength / 16} ${piece.cellLength === 16 ? 'compás' : 'compases'} de 4/4)`],
       ['Contorno', capitalize(piece.contour || '—') + (otherContours.length ? `; variaciones recontorneadas con ${otherContours.map(capitalize).join(', ')}` : '')],
       ['Motivos', `${contours.length}: la madre y ${contours.length - 1} variaciones`],
-      ['Pistas', piece.padTrack >= 0
-        ? `${piece.numTracks - 1} melódicas y la ${piece.padTrack + 1} de acordes tenidos (≋), que sostiene la armonía del plan con conducción de voces`
-        : String(piece.numTracks)],
+      ['Pistas', `${melodicTracks(piece)} melódicas`
+        + (piece.padTrack >= 0 ? `; la ${piece.padTrack + 1}, de acordes tenidos (≋), sostiene la armonía del plan con conducción de voces` : '')
+        + (piece.drumTrack >= 0 ? `; la ${piece.drumTrack + 1}, de percusión (◆), deriva su ritmo de la célula de cada sección` : '')],
       ['Duración', `${formatTime(piece.totalSteps * stepSeconds())} a ♩=${getUIState().tempo} (${piece.totalSteps} pasos)`],
       ['Armonía', harmonyFact],
       ['Plan tonal', tonalFact],
@@ -1412,7 +1460,7 @@ const App = (() => {
       // El editor solo toca el sinte: def trae base y params, y la cadena de
       // inserts (con su bypass) es la vigente, que se edita en la consola
       onChange: (t, def) => {
-        if (!isPadTrack(t)) ensureTrackSettings(t + 1);
+        if (!isPadTrack(t) && !isDrumTrack(t)) ensureTrackSettings(t + 1);
         settingsOf(t).edited = { base: def.base, params: def.params, chain: JSON.parse(JSON.stringify(chainOf(t))) };
         scheduleSave();
       },
@@ -1461,7 +1509,8 @@ const App = (() => {
       numTracks: currentNumTracks,
       settingsOf,
       resolvedOf,
-      trackHead: t => ({ mark: registerMark(t), title: registerTitle(t) }),
+      // la pista de percusión no abre el editor de sintes (un kit no es un motor)
+      trackHead: t => ({ mark: registerMark(t), title: registerTitle(t), editable: !isDrumTrack(t) }),
       presetOptionsHtml,
       choosePreset,
       openEditor: t => SynthEditor.open(t, resolvedOf(t) || 'Synth', settingsOf(t).edited),
