@@ -42,8 +42,10 @@ Notas:
 `Generator.CONTOUR_NAMES`, vía `generateMotherCell(len, nombre)`):
 - `cell.length === len` y `cell.contour` guardado.
 - Cada paso: `degree` entero en [-7, 7], `velocity` en [0.15, 1], `note` booleano,
-  `sustain` continuo en [0.25, 1] (onda lenta de legato: media ~0.7 y rachas de
-  pasos contiguos ligados, no ruido por nota).
+  `sustain` continuo en [0.25, 1] (onda lenta de legato: media ~0.8, piso de los
+  tramos picados ~0.4–0.7, y rachas de pasos contiguos ligados, no ruido por
+  nota). En piezas completas, ~75 % de las notas llegan ligadas a la siguiente
+  (`durationSteps === hueco`) y ~16 % del tiempo en huecos ≤ 8 es silencio.
 - Densidad de notas razonable (proporción de `note:true` ~0.25–0.45 de media;
   el ritmo va por valores de nota, así que es menor que con sorteo por paso).
 - Huecos entre ataques variados: fracción de huecos de 1 paso < 0.55 y de

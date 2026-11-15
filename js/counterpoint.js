@@ -105,7 +105,7 @@ const Counterpoint = (() => {
           attacks.push({ t, cell });
         } else {
           const gap = (i + 1 < pos.length ? pos[i + 1] : ctx.totalSteps) - start;
-          const dur = Math.max(1, Math.round(cell.sustain * Math.min(gap, MAX_SUSTAIN_STEPS)));
+          const dur = Generator.sustainSteps(cell.sustain, gap);
           if (start + dur > s) held.push({ t, cell, start, gap });
         }
       }

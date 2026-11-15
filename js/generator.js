@@ -1244,7 +1244,9 @@ const Generator = (() => {
     // el sustain nota a nota — así el legato dibuja frases y no ruido
     const legatoCycles = pickRandom([1, 2, 3]);
     const legatoPhase = Math.random() * Math.PI * 2;
-    const legatoBase = 0.2 + Math.random() * 0.3;
+    // El piso (tramos picados) no baja de ~0.4: más corto y la célula entera
+    // sonaba a staccato
+    const legatoBase = 0.4 + Math.random() * 0.3;
     // El ritmo avanza por valores de nota en vez de sortear cada paso: cada
     // ataque (o silencio) ocupa un valor rítmico entero, así los huecos varían
     // y la duración final (sustain × hueco) da notas tenidas, no solo
@@ -1543,6 +1545,14 @@ const Generator = (() => {
   // Tope del hueco que una nota puede sostener (duración = sustain × hueco)
   const MAX_SUSTAIN_STEPS = 16;
 
+  // Duración en pasos de una nota: la única fórmula (compositor y
+  // contrapunto). Redondea hacia arriba: con el redondeo al más cercano una
+  // nota de sustain 0.7 en un hueco de 2 pasos quedaba en 1 y media frase
+  // sonaba picada. Nunca pasa del hueco (sustain ≤ 1)
+  function sustainSteps(sustain, gap) {
+    return Math.max(1, Math.ceil(sustain * Math.min(gap, MAX_SUSTAIN_STEPS) - 1e-9));
+  }
+
   // Mapa pista×paso -> marcador de bloque; los pases no mueven bloques, así
   // que sigue válido mientras mutan la rejilla
   function buildBlockMap(ctx) {
@@ -1582,6 +1592,7 @@ const Generator = (() => {
     cellMidi,
     GHOST_VELOCITY,
     MAX_SUSTAIN_STEPS,
+    sustainSteps,
     buildBlockMap,
     sectionAt
   };

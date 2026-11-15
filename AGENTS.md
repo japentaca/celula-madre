@@ -159,7 +159,9 @@ si `opts.pad`)) → render
 - **Utilidades compartidas** en `Generator` (carga antes que los pases):
   `GHOST_VELOCITY` (0.18, umbral de nota fantasma usado por composer, energy y
   counterpoint), `MAX_SUSTAIN_STEPS` (16, tope de hueco en duraciones de
-  composer y counterpoint), `buildBlockMap(ctx)` y `sectionAt(ctx, paso)`.
+  composer y counterpoint), `sustainSteps(sustain, hueco)` (la única fórmula
+  de duración en pasos, que ambos comparten: redondea hacia arriba para que
+  las notas se liguen — con el redondeo al más cercano sonaba todo picado), `buildBlockMap(ctx)` y `sectionAt(ctx, paso)`.
 - **Plan formal** (`FormPlan.plan`, `piece.form`): `{ characters,
   returnIndex, recapIndex, tonalEnd, climaxSection, climax, climaxStep,
   retransition, peak, totalSteps }`. Se calcula en `compose` con las

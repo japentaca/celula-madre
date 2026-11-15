@@ -643,7 +643,7 @@ const Composer = (() => {
         const s = notePositions[i];
         const cell = row[s];
         const gap = (i + 1 < notePositions.length ? notePositions[i + 1] : totalSteps) - s;
-        cell.durationSteps = Math.max(1, Math.round(cell.sustain * Math.min(gap, Generator.MAX_SUSTAIN_STEPS)));
+        cell.durationSteps = Generator.sustainSteps(cell.sustain, gap);
         stepEvents[s].push({ trackIndex: t, cell });
       }
     }
