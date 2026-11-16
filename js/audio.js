@@ -426,20 +426,53 @@ const AudioEngine = (() => {
   // reproducción). Se desvanece el canal (los envíos, post-fader, lo siguen)
   // y se desechan al terminar
   const RETIRE_FADE = 4;
+  // Un juego retirado que aún se desvanece cuando llega otro se apaga en esta
+  // rampa corta: sin tope, regenerar seguido apilaba piezas enteras en el grafo
+  const RETIRE_FLUSH = 0.08;
+  let retiring = [];
 
   function retireTrack(track) {
     const now = Tone.now();
+    // Ya muda (la coda del final la bajó a 0): se desecha en el acto, durante
+    // el respiro, y no segundos después con la pieza siguiente sonando
+    let silent = false;
+    try { silent = track.channel.gain.getValueAtTime(now) < 1e-4; } catch (e) { /* ignore */ }
+    if (silent) {
+      disposeTrack(track);
+      return;
+    }
     try {
       track.channel.gain.cancelScheduledValues(now);
       track.channel.gain.rampTo(0, RETIRE_FADE, now);
     } catch (e) { /* ignore */ }
-    setTimeout(() => disposeTrack(track), (RETIRE_FADE + 0.5) * 1000);
+    const entry = { track };
+    entry.timer = setTimeout(() => {
+      retiring = retiring.filter(e => e !== entry);
+      disposeTrack(track);
+    }, (RETIRE_FADE + 0.5) * 1000);
+    retiring.push(entry);
+  }
+
+  function flushRetiring() {
+    const now = Tone.now();
+    for (const entry of retiring) {
+      clearTimeout(entry.timer);
+      try {
+        const gain = entry.track.channel.gain;
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(gain.getValueAtTime(now), now);
+        gain.linearRampToValueAtTime(0, now + RETIRE_FLUSH);
+      } catch (e) { /* ignore */ }
+      setTimeout(() => disposeTrack(entry.track), (RETIRE_FLUSH + 0.1) * 1000);
+    }
+    retiring = [];
   }
 
   // configs: [{ preset, volume, reverb, delay, pan }] — una instancia de sinte por pista
   // (instancias compartidas provocan errores de retrigger en sintes monofónicos)
   function setupTracks(configs) {
     ensureGraph();
+    flushRetiring();
     for (const track of tracks) retireTrack(track);
     tracks = configs.map(cfg => {
       const channel = new Tone.Gain(cfg.volume);
